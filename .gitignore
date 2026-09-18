@@ -1,0 +1,20 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# CV spike outputs (large binary files)
+backend/cv_spike/output/
+backend/cv_spike/sample_videos/
+backend/cv_spike/models/*.task
+
+# Env
+.env
+.env.local
+
+# OS
+.DS_Store
+
+# Node (future frontend)
+node_modules/
+dist/
