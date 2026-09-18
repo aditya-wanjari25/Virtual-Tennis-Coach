@@ -74,7 +74,10 @@ def run(video_path: Path):
     )
 
     options = PoseLandmarkerOptions(
-        base_options=BaseOptions(model_asset_path=str(MODEL_PATH)),
+        base_options=BaseOptions(
+            model_asset_path=str(MODEL_PATH),
+            delegate=BaseOptions.Delegate.CPU,
+        ),
         running_mode=RunningMode.VIDEO,
         num_poses=1,
     )
