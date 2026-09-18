@@ -18,3 +18,4 @@ backend/cv_spike/models/*.task
 # Node (future frontend)
 node_modules/
 dist/
+backend/.env
