@@ -3,29 +3,29 @@
 Processing (pose extraction + metrics + the LangGraph agent) takes real
 time -- too long to block an HTTP request -- so uploads kick off a
 background task and the client polls for the result. Job state lives in
-an in-memory dict for now; swap for Postgres once we need jobs to
-survive a server restart or run across multiple workers.
+Postgres so it survives restarts and works across multiple workers.
 """
 
 from __future__ import annotations
 
 import uuid
+from contextlib import asynccontextmanager
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
-
-from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, HTTPException, UploadFile
 from langfuse import get_client, observe
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.agent.graph import build_graph
 from app.analysis.metrics import compute_swing_metrics
 from app.analysis.phases import segment_swings
 from app.analysis.pose_extraction import extract_pose_sequence
+from app.db import get_session
+from app.models import JobModel
 
 load_dotenv()
 
@@ -50,16 +50,13 @@ class JobStatus(str, Enum):
 
 
 class Job(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     status: JobStatus
     created_at: datetime
     feedback: str | None = None
     error: str | None = None
-
-
-# In-memory job store: job_id -> Job. Fine for a single-process dev
-# server; not safe across multiple workers/restarts.
-JOBS: dict[str, Job] = {}
 
 
 class UploadResponse(BaseModel):
@@ -68,8 +65,12 @@ class UploadResponse(BaseModel):
 
 @observe(name="analyze_swing_video")
 def _process_video(job_id: str, video_path: Path) -> None:
-    JOBS[job_id].status = JobStatus.PROCESSING
+    session = get_session()
     try:
+        job = session.get(JobModel, job_id)
+        job.status = JobStatus.PROCESSING
+        session.commit()
+
         pose = extract_pose_sequence(video_path)
         swings = segment_swings(pose, hand="right")
         if not swings:
@@ -79,12 +80,16 @@ def _process_video(job_id: str, video_path: Path) -> None:
         graph = build_graph()
         result = graph.invoke({"swings": swing_metrics})
 
-        JOBS[job_id].feedback = result["feedback"]
-        JOBS[job_id].status = JobStatus.DONE
+        job.feedback = result["feedback"]
+        job.status = JobStatus.DONE
+        session.commit()
     except Exception as e:
-        JOBS[job_id].error = str(e)
-        JOBS[job_id].status = JobStatus.ERROR
+        job = session.get(JobModel, job_id)
+        job.error = str(e)
+        job.status = JobStatus.ERROR
+        session.commit()
     finally:
+        session.close()
         video_path.unlink(missing_ok=True)
 
 
@@ -96,7 +101,13 @@ async def upload_video(background_tasks: BackgroundTasks, file: UploadFile) -> U
     with open(video_path, "wb") as f:
         f.write(await file.read())
 
-    JOBS[job_id] = Job(id=job_id, status=JobStatus.PENDING, created_at=datetime.now(timezone.utc))
+    session = get_session()
+    try:
+        session.add(JobModel(id=job_id, status=JobStatus.PENDING))
+        session.commit()
+    finally:
+        session.close()
+
     background_tasks.add_task(_process_video, job_id, video_path)
 
     return UploadResponse(job_id=job_id)
@@ -104,7 +115,11 @@ async def upload_video(background_tasks: BackgroundTasks, file: UploadFile) -> U
 
 @app.get("/videos/{job_id}", response_model=Job)
 async def get_video_status(job_id: str) -> Job:
-    job = JOBS.get(job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
-    return job
+    session = get_session()
+    try:
+        job = session.get(JobModel, job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Job not found")
+        return Job.model_validate(job)
+    finally:
+        session.close()

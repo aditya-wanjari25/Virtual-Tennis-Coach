@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "alembic>=1.20.0",
     "anthropic>=1.6.0",
     "fastapi>=0.141.1",
     "langfuse>=4.15.4",
@@ -12,8 +13,10 @@ dependencies = [
     "mediapipe==0.10.30",
     "numpy>=2.5.3",
     "opencv-python>=5.0.0.93",
+    "psycopg[binary]>=3.3.6",
     "python-dotenv>=1.2.3",
     "python-multipart>=0.0.32",
+    "sqlalchemy>=2.0.54",
     "uvicorn[standard]>=0.53.0",
 ]
 
