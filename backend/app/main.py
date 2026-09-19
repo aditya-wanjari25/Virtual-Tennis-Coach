@@ -23,6 +23,7 @@ from pydantic import BaseModel, ConfigDict
 
 from app.agent.graph import build_graph
 from app.analysis.metrics import compute_swing_metrics
+from app.analysis.perception import analyze_video
 from app.analysis.phases import segment_swings
 from app.analysis.pose_extraction import extract_pose_sequence
 from app.db import get_session
@@ -88,8 +89,13 @@ def _process_video(job_id: str, video_path: Path) -> None:
             raise ValueError("No swings detected in video")
         swing_metrics = [asdict(compute_swing_metrics(pose, s, hand="right")) for s in swings]
 
+        # Must run before the `finally` below deletes the video. Returns None on
+        # failure rather than raising -- perception is supplementary, so losing
+        # it degrades the analysis to metrics-only instead of failing the job.
+        observations = analyze_video(video_path, pose, swings)
+
         graph = build_graph()
-        result = graph.invoke({"swings": swing_metrics})
+        result = graph.invoke({"swings": swing_metrics, "observations": observations})
 
         job.feedback = result["feedback"]
         job.status = JobStatus.DONE

@@ -44,23 +44,51 @@ def _call_claude(system: str, user_content: str) -> str:
     return text
 
 
+def _evidence(state: AgentState) -> str:
+    """The two evidence sources, rendered once and passed to every node.
+
+    Previously each node received only the *previous node's prose*, so by the
+    time we reached synthesize_feedback the model no longer had the metrics or
+    the observations at all -- it was writing coaching advice from a summary of
+    a summary. Every node now sees the underlying evidence.
+    """
+    parts = [f"MEASURED METRICS (deterministic, from pose tracking):\n{json.dumps(state['swings'], indent=2)}"]
+
+    observations = state.get("observations")
+    if observations:
+        parts.append(
+            "VISUAL OBSERVATIONS (from a model that watched the video; "
+            f"perceptual, not measured):\n{json.dumps(observations, indent=2)}"
+        )
+    else:
+        parts.append(
+            "VISUAL OBSERVATIONS: unavailable for this video -- perception failed or was "
+            "skipped. Work from the metrics alone and do not speculate about anything "
+            "they don't cover."
+        )
+    return "\n\n".join(parts)
+
+
 @observe()
 def diagnose_flaws(state: AgentState) -> dict:
-    metrics_json = json.dumps(state["swings"], indent=2)
-    diagnosis = _call_claude(DIAGNOSE_SYSTEM_PROMPT, f"Swing metrics:\n{metrics_json}")
+    diagnosis = _call_claude(DIAGNOSE_SYSTEM_PROMPT, _evidence(state))
     return {"diagnosis": diagnosis}
 
 
 @observe()
 def prioritize(state: AgentState) -> dict:
-    priorities = _call_claude(PRIORITIZE_SYSTEM_PROMPT, f"Observations:\n{state['diagnosis']}")
-    return {"priorities": priorities}
+    user = f"{_evidence(state)}\n\nOBSERVATIONS FROM THE ANALYST:\n{state['diagnosis']}"
+    return {"priorities": _call_claude(PRIORITIZE_SYSTEM_PROMPT, user)}
 
 
 @observe()
 def synthesize_feedback(state: AgentState) -> dict:
-    feedback = _call_claude(SYNTHESIZE_SYSTEM_PROMPT, f"Priorities:\n{state['priorities']}")
-    return {"feedback": feedback}
+    user = (
+        f"{_evidence(state)}\n\n"
+        f"OBSERVATIONS FROM THE ANALYST:\n{state['diagnosis']}\n\n"
+        f"PRIORITIES TO COVER:\n{state['priorities']}"
+    )
+    return {"feedback": _call_claude(SYNTHESIZE_SYSTEM_PROMPT, user)}
 
 
 def build_graph():
