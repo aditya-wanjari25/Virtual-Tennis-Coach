@@ -8,6 +8,9 @@ backend/cv_spike/output/
 backend/cv_spike/sample_videos/
 backend/cv_spike/models/*.task
 
+# Uploaded videos (local disk storage for now)
+backend/storage/
+
 # Env
 .env
 .env.local

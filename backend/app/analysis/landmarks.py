@@ -41,15 +41,15 @@ class PoseSequence:
         return len(self.timestamps_s)
 
 
-def load_pose_sequence(json_path: str | Path) -> PoseSequence:
-    with open(json_path) as f:
-        raw_frames = json.load(f)
-
+def pose_sequence_from_frames(raw_frames: list[dict]) -> PoseSequence:
+    """Build a PoseSequence from the raw per-frame dicts produced by pose
+    extraction: [{"frame": int, "timestamp_ms": int, "landmarks": dict|None}, ...]
+    """
     # Only keep frames where a pose was actually detected -- gaps (missed
     # detections) get silently dropped rather than interpolated for now.
     detected = [f for f in raw_frames if f["landmarks"] is not None]
     if len(detected) < 2:
-        raise ValueError(f"Too few detected frames in {json_path} to analyze")
+        raise ValueError("Too few detected frames to analyze")
 
     timestamps_s = np.array([f["timestamp_ms"] / 1000 for f in detected])
 
@@ -62,3 +62,9 @@ def load_pose_sequence(json_path: str | Path) -> PoseSequence:
     fps = 1.0 / np.median(np.diff(timestamps_s))
 
     return PoseSequence(xy=xy, visibility=visibility, timestamps_s=timestamps_s, fps=fps)
+
+
+def load_pose_sequence(json_path: str | Path) -> PoseSequence:
+    with open(json_path) as f:
+        raw_frames = json.load(f)
+    return pose_sequence_from_frames(raw_frames)

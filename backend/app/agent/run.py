@@ -10,6 +10,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from dotenv import load_dotenv
+from langfuse import get_client, observe
 
 from app.agent.graph import build_graph
 from app.analysis.landmarks import load_pose_sequence
@@ -19,6 +20,7 @@ from app.analysis.phases import segment_swings
 load_dotenv()
 
 
+@observe(name="analyze_swing_video")
 def analyze(landmarks_path: str | Path) -> str:
     pose = load_pose_sequence(landmarks_path)
     swings = segment_swings(pose, hand="right")
@@ -33,3 +35,4 @@ if __name__ == "__main__":
     if len(sys.argv) != 2:
         raise SystemExit("Usage: python -m app.agent.run path/to/landmarks.json")
     print(analyze(sys.argv[1]))
+    get_client().flush()
