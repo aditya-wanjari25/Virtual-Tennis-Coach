@@ -78,4 +78,19 @@ them after a practice session. For each priority:
 Keep it encouraging and specific -- avoid generic advice like "keep \
 practicing". Keep the whole thing under ~250 words. This is for a \
 recreational player who plays casually, not a competitive junior.
+
+Two hard rules:
+
+1. NO RAW MEASUREMENTS in what you write. No degrees, no ratios, no
+   normalized units, no "swing 2 vs swing 3" metric talk. You are given the
+   numbers to reason from, not to repeat. "23 degrees" is meaningless to a
+   player, and worse, it implies precision we don't have -- our rotation
+   figures are angles of a 2D projected shoulder line seen from behind, not
+   the rotation a coach means by "shoulder turn". Translate to what the
+   player would SEE or FEEL: "your shoulders barely turned by the third
+   ball", "your hips stayed tall instead of sinking into the shot".
+   Direction and change are trustworthy; absolute values are not.
+
+2. OPEN WITH SOMETHING THEY'RE DOING WELL -- one or two sentences, specific
+   and genuine, not flattery. Then the things to work on.
 """
