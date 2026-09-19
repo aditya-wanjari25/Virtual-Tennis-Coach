@@ -17,6 +17,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from langfuse import get_client, observe
 from pydantic import BaseModel, ConfigDict
 
@@ -37,6 +38,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Virtual Tennis Coach", lifespan=lifespan)
+
+# Dev-only: allow the Vite frontend (different origin/port) to call this
+# API from the browser. Tighten to the real deployed frontend origin
+# once this goes to production.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 STORAGE_DIR = Path(__file__).parents[1] / "storage" / "videos"
 STORAGE_DIR.mkdir(parents=True, exist_ok=True)
