@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { getSwings, videoUrl } from '../api'
 
 const OBS_LABELS: Record<string, string> = {
@@ -35,19 +35,6 @@ export function SwingBreakdown({ jobId }: { jobId: string }) {
     void v.play().catch(() => {}) // autoplay can be blocked; not worth surfacing
   }
 
-  useEffect(() => {
-    const v = videoRef.current
-    if (!v) return
-    const onTime = () => setPlayhead(v.currentTime)
-    const onMeta = () => setDuration(v.duration || 0)
-    v.addEventListener('timeupdate', onTime)
-    v.addEventListener('loadedmetadata', onMeta)
-    return () => {
-      v.removeEventListener('timeupdate', onTime)
-      v.removeEventListener('loadedmetadata', onMeta)
-    }
-  }, [])
-
   if (isError || !swings?.length) return null
 
   const current = swings.find((s) => s.index === selected) ?? swings[0]
@@ -55,9 +42,30 @@ export function SwingBreakdown({ jobId }: { jobId: string }) {
 
   return (
     <div className="animate-rise overflow-hidden rounded-3xl border border-ink-700/60 bg-ink-850/40">
-      <div className="border-b border-ink-700/60 px-8 py-5">
-        <h2 className="font-semibold tracking-tight text-neutral-100">Swing by swing</h2>
-        <p className="mt-1 text-sm text-neutral-500">Pick a swing to jump to it and see what was found.</p>
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-ink-700/60 px-8 py-5">
+        <div>
+          <h2 className="font-semibold tracking-tight text-neutral-100">Swing by swing</h2>
+          <p className="mt-1 text-sm text-neutral-500">Pick a swing to jump to it in the video.</p>
+        </div>
+
+        {/* Explicit selector. The markers on the timeline do the same thing,
+            but numbered dots on a thin line aren't a discoverable control. */}
+        <div className="flex gap-1.5">
+          {swings.map((s) => (
+            <button
+              key={s.index}
+              onClick={() => seekTo(s.contact_time_s, s.index)}
+              className={`rounded-xl px-3.5 py-2 text-sm font-medium transition-colors
+                ${
+                  s.index === selected
+                    ? 'bg-court-500 text-ink-900'
+                    : 'border border-ink-600 text-neutral-400 hover:border-court-500/60 hover:text-court-300'
+                }`}
+            >
+              Swing {s.index}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="p-8">
@@ -69,6 +77,11 @@ export function SwingBreakdown({ jobId }: { jobId: string }) {
             muted
             playsInline
             preload="metadata"
+            // Props rather than addEventListener in an effect: the effect ran
+            // on mount, before the data arrived and before this element existed,
+            // so the listeners never attached and duration stayed 0.
+            onLoadedMetadata={(e) => setDuration(e.currentTarget.duration || 0)}
+            onTimeUpdate={(e) => setPlayhead(e.currentTarget.currentTime)}
             className="max-h-[420px] w-full object-contain"
           />
         </div>

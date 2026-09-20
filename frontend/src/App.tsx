@@ -91,7 +91,7 @@ function App() {
         )}
 
         <footer className="mt-16 text-center text-xs text-neutral-600">
-          Measurements from pose tracking · Observations from video · Filmed from behind the baseline
+          Measurements from pose tracking · Observations from video
         </footer>
       </div>
     </div>

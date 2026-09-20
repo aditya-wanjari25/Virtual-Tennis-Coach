@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react'
 import type { Stage } from '../api'
 
 /** Ordered so we can tell which steps are already behind us. The copy says what
@@ -10,13 +9,6 @@ const STEPS: { id: Stage; label: string; detail: string }[] = [
 ]
 
 export function ProcessingView({ stage }: { stage: Stage | null }) {
-  const [elapsed, setElapsed] = useState(0)
-
-  useEffect(() => {
-    const t = setInterval(() => setElapsed((s) => s + 1), 1000)
-    return () => clearInterval(t)
-  }, [])
-
   // Before the first stage lands, treat it as step one rather than showing
   // nothing -- the upload has finished, so work really is underway.
   const activeIndex = Math.max(0, STEPS.findIndex((s) => s.id === stage))
@@ -28,9 +20,8 @@ export function ProcessingView({ stage }: { stage: Stage | null }) {
       </div>
 
       <div className="p-8">
-        <div className="mb-8 flex items-baseline justify-between">
+        <div className="mb-8">
           <h2 className="text-lg font-semibold tracking-tight text-neutral-100">Analyzing</h2>
-          <span className="tnum text-sm text-neutral-500">{elapsed}s</span>
         </div>
 
         <ol className="flex flex-col gap-5">
@@ -60,12 +51,6 @@ export function ProcessingView({ stage }: { stage: Stage | null }) {
             )
           })}
         </ol>
-
-        {elapsed > 45 && (
-          <p className="mt-8 border-t border-ink-700/60 pt-5 text-xs leading-relaxed text-neutral-500">
-            Taking longer than usual — longer videos mean more frames to work through. Still going.
-          </p>
-        )}
       </div>
     </div>
   )
