@@ -19,6 +19,7 @@ from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from langfuse import get_client, observe
 from pydantic import BaseModel, ConfigDict
 
@@ -156,6 +157,106 @@ async def upload_video(background_tasks: BackgroundTasks, file: UploadFile) -> U
     background_tasks.add_task(_process_video, job_id, video_path)
 
     return UploadResponse(job_id=job_id)
+
+
+class Swing(BaseModel):
+    """One swing, as the UI needs it.
+
+    Metrics are deliberately NOT sent as raw values. Our rotation figures are
+    angles of a 2D projected shoulder line from a back view -- the absolute
+    number isn't in units a player thinks in, and quoting it implies precision
+    we don't have. What IS trustworthy is how a quantity compares across the
+    swings in one video, so each metric ships as a 0-1 position within this
+    video's own range, for relative bars rather than numbers.
+    """
+
+    index: int
+    contact_time_s: float
+    observations: dict[str, str] = {}
+    relative: dict[str, float] = {}
+
+
+# Metrics worth comparing across swings, with player-facing labels.
+_COMPARABLE = {
+    "max_shoulder_rotation_during_backswing_deg": "Shoulder turn",
+    "stance_width_at_contact": "Stance width",
+    "swing_path_width": "Swing size",
+    "arm_extension_at_contact": "Arm extension",
+}
+
+
+def _relative(metrics: list[dict], key: str) -> list[float | None]:
+    """Each swing's value as a 0-1 position within this video's own range."""
+    raw = [m.get(key) for m in metrics]
+    vals = [abs(v) for v in raw if isinstance(v, (int, float))]
+    if len(vals) < 2:
+        return [None] * len(raw)
+    lo, hi = min(vals), max(vals)
+    span = hi - lo
+    return [
+        None if not isinstance(v, (int, float)) else (0.5 if span == 0 else (abs(v) - lo) / span)
+        for v in raw
+    ]
+
+
+@app.get("/videos/{job_id}/swings", response_model=list[Swing])
+async def get_swings(job_id: str) -> list[Swing]:
+    """Per-swing breakdown, so the UI can show the evidence behind the feedback."""
+    session = get_session()
+    try:
+        job = session.get(JobModel, job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Job not found")
+        metrics, observations = job.metrics or [], job.observations or {}
+    finally:
+        session.close()
+
+    obs_by_index = {s.get("swing_index"): s for s in observations.get("swings", [])}
+    rel = {label: _relative(metrics, key) for key, label in _COMPARABLE.items()}
+
+    out = []
+    for i, m in enumerate(metrics):
+        obs = obs_by_index.get(i + 1, {})
+        out.append(
+            Swing(
+                index=i + 1,
+                contact_time_s=m.get("contact_time_s", 0.0),
+                observations={
+                    k: v for k, v in obs.items()
+                    if k != "swing_index" and isinstance(v, str) and v.strip()
+                },
+                relative={label: vals[i] for label, vals in rel.items() if vals[i] is not None},
+            )
+        )
+    return out
+
+
+@app.get("/videos/{job_id}/file")
+async def get_video_file(job_id: str) -> FileResponse:
+    """Serve the uploaded video back for playback.
+
+    FileResponse handles HTTP range requests, which is what makes seeking work
+    in a <video> element -- without 206 responses the browser can only play
+    from the start.
+    """
+    session = get_session()
+    try:
+        job = session.get(JobModel, job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Job not found")
+        key = job.video_key
+    finally:
+        session.close()
+
+    if not key:
+        raise HTTPException(status_code=404, detail="No video stored for this analysis")
+
+    # Guard against a crafted video_key escaping the storage directory.
+    path = (STORAGE_DIR / key).resolve()
+    if not path.is_relative_to(STORAGE_DIR.resolve()) or not path.exists():
+        raise HTTPException(status_code=404, detail="Video file is no longer available")
+
+    return FileResponse(path, media_type="video/mp4")
 
 
 class ChatRequest(BaseModel):

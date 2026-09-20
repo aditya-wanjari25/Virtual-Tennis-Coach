@@ -32,6 +32,29 @@ export async function getJob(jobId: string): Promise<Job> {
   return res.json()
 }
 
+export interface Swing {
+  index: number
+  contact_time_s: number
+  /** Qualitative notes, keyed by aspect (lower_body, balance, ...). */
+  observations: Record<string, string>
+  /** Each metric as a 0-1 position within THIS video's range. Deliberately not
+   *  absolute values — our angles are 2D projections, so only the comparison
+   *  across swings is meaningful. */
+  relative: Record<string, number>
+}
+
+export function videoUrl(jobId: string): string {
+  return `${API_BASE_URL}/videos/${jobId}/file`
+}
+
+export async function getSwings(jobId: string): Promise<Swing[]> {
+  const res = await fetch(`${API_BASE_URL}/videos/${jobId}/swings`)
+  if (!res.ok) {
+    throw new Error(`Could not load swing breakdown (${res.status})`)
+  }
+  return res.json()
+}
+
 export interface ChatMessage {
   role: "user" | "assistant"
   content: string

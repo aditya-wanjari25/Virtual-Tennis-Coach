@@ -2,6 +2,7 @@ import Markdown from 'react-markdown'
 import type { Job } from '../api'
 import { ChatPanel } from './ChatPanel'
 import { ProcessingView } from './ProcessingView'
+import { SwingBreakdown } from './SwingBreakdown'
 
 export function StatusView({ job, onReset }: { job: Job; onReset: () => void }) {
   if (job.status === 'pending' || job.status === 'processing') {
@@ -62,6 +63,8 @@ export function StatusView({ job, onReset }: { job: Job; onReset: () => void }) 
           </div>
         </div>
       </div>
+
+      <SwingBreakdown jobId={job.id} />
 
       <ChatPanel jobId={job.id} />
 
