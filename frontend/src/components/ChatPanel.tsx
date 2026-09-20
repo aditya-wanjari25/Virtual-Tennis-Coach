@@ -52,49 +52,54 @@ export function ChatPanel({ jobId }: { jobId: string }) {
   }
 
   return (
-    <div className="mt-6 flex flex-col gap-4 rounded-2xl border border-neutral-200 dark:border-neutral-800 p-6">
-      <div className="flex items-center gap-2">
+    <div className="animate-rise flex flex-col gap-5 rounded-3xl border border-ink-700/60 bg-ink-850/40 p-8">
+      <div className="flex items-center gap-2.5">
         <span className="text-xl">💬</span>
-        <h2 className="font-semibold text-neutral-900 dark:text-neutral-100">Ask your coach</h2>
+        <h2 className="font-semibold tracking-tight text-neutral-100">Ask your coach</h2>
       </div>
 
       {messages.length === 0 && !mutation.isPending && (
-        <div className="flex flex-wrap gap-2">
-          {SUGGESTIONS.map((s) => (
-            <button
-              key={s}
-              onClick={() => submit(s)}
-              className="rounded-full border border-neutral-300 dark:border-neutral-700 px-3 py-1.5 text-sm text-neutral-600 dark:text-neutral-400 hover:border-lime-500 hover:text-lime-600"
-            >
-              {s}
-            </button>
-          ))}
+        <div className="flex flex-col gap-3">
+          <p className="text-sm leading-relaxed text-neutral-500">
+            Follow up on anything above. The coach can re-watch a specific swing to answer.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {SUGGESTIONS.map((s) => (
+              <button
+                key={s}
+                onClick={() => submit(s)}
+                className="rounded-full border border-ink-600 px-3.5 py-1.5 text-sm text-neutral-400 transition-colors hover:border-court-500/60 hover:bg-court-500/5 hover:text-court-300"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
       {messages.length > 0 && (
-        <div className="flex max-h-96 flex-col gap-4 overflow-y-auto">
+        <div className="flex max-h-[26rem] flex-col gap-5 overflow-y-auto pr-1">
           {messages.map((m, i) => (
             <div
               key={i}
               className={
                 m.role === 'user'
-                  ? 'self-end max-w-[85%] rounded-2xl bg-lime-600 px-4 py-2 text-white'
-                  : 'self-start max-w-[90%] text-neutral-800 dark:text-neutral-200'
+                  ? 'max-w-[85%] self-end rounded-2xl rounded-br-md bg-court-500 px-4 py-2.5 text-sm font-medium text-ink-900'
+                  : 'max-w-[92%] self-start'
               }
             >
               {m.role === 'user' ? (
                 m.content
               ) : (
-                <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none">
+                <div className="prose prose-sm prose-invert max-w-none prose-p:leading-relaxed prose-p:text-neutral-300 prose-strong:text-neutral-100">
                   <Markdown>{m.content}</Markdown>
                 </div>
               )}
             </div>
           ))}
           {mutation.isPending && (
-            <div className="flex items-center gap-2 self-start text-sm text-neutral-500">
-              <div className="h-3 w-3 animate-spin rounded-full border-2 border-lime-500 border-t-transparent" />
+            <div className="flex items-center gap-2.5 self-start text-sm text-neutral-500">
+              <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-court-400 border-t-transparent" />
               thinking — may be re-watching your video…
             </div>
           )}
@@ -102,9 +107,7 @@ export function ChatPanel({ jobId }: { jobId: string }) {
         </div>
       )}
 
-      {mutation.isError && (
-        <p className="text-sm text-red-600 dark:text-red-400">{mutation.error.message}</p>
-      )}
+      {mutation.isError && <p className="text-sm text-red-400">{mutation.error.message}</p>}
 
       <form
         onSubmit={(e) => {
@@ -118,12 +121,12 @@ export function ChatPanel({ jobId }: { jobId: string }) {
           onChange={(e) => setDraft(e.target.value)}
           placeholder="Was my elbow bent at contact?"
           disabled={mutation.isPending}
-          className="flex-1 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-transparent px-3 py-2 text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:border-lime-500 focus:outline-none disabled:opacity-50"
+          className="flex-1 rounded-xl border border-ink-600 bg-ink-900/60 px-4 py-2.5 text-sm text-neutral-100 transition-colors placeholder:text-neutral-600 focus:border-court-500 focus:outline-none disabled:opacity-50"
         />
         <button
           type="submit"
           disabled={mutation.isPending || !draft.trim()}
-          className="rounded-lg bg-lime-600 px-4 py-2 text-sm font-medium text-white hover:bg-lime-700 disabled:opacity-40"
+          className="rounded-xl bg-court-500 px-5 py-2.5 text-sm font-semibold text-ink-900 transition-colors hover:bg-court-400 disabled:opacity-30"
         >
           Ask
         </button>

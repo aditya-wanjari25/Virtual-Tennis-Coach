@@ -1,11 +1,79 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+/* Design tokens.
+   Dark-first: this is a focused analysis tool, and dark reads as "instrument"
+   rather than "document". Light mode is supported but secondary.
+
+   Accent is tennis-ball chartreuse, deliberately used sparingly -- on a dark
+   ground it's loud enough that spreading it around cheapens it. Clay is the
+   secondary accent (courts, warmth) and appears only on the strength callout,
+   so a compliment never looks like a warning. */
+@theme {
+  --color-court-50: #f7fee7;
+  --color-court-300: #bef264;
+  --color-court-400: #a3e635;
+  --color-court-500: #84cc16;
+  --color-court-600: #65a30d;
+  --color-court-700: #4d7c0f;
+
+  --color-clay-400: #e08b5f;
+  --color-clay-500: #c2612f;
+
+  --color-ink-900: #0a0b0d;
+  --color-ink-850: #111317;
+  --color-ink-800: #171a1f;
+  --color-ink-700: #23272e;
+  --color-ink-600: #343a43;
+}
+
 :root {
-  color-scheme: light dark;
+  color-scheme: dark light;
 }
 
 body {
   margin: 0;
-  font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Tabular figures so numbers don't jitter as values change. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-rise {
+  animation: rise 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+/* Indeterminate progress: honest about not knowing how long a stage will take,
+   unlike a percentage bar that would have to be invented. */
+.animate-sweep {
+  animation: sweep 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse-ring {
+  0%   { box-shadow: 0 0 0 0 rgb(163 230 53 / 0.45); }
+  70%  { box-shadow: 0 0 0 10px rgb(163 230 53 / 0); }
+  100% { box-shadow: 0 0 0 0 rgb(163 230 53 / 0); }
+}
+.animate-pulse-ring {
+  animation: pulse-ring 2s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-rise,
+  .animate-sweep,
+  .animate-pulse-ring {
+    animation: none;
+  }
 }

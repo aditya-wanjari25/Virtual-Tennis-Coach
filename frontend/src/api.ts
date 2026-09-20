@@ -1,13 +1,16 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000"
 
 export type JobStatus = "pending" | "processing" | "done" | "error"
+export type Stage = "tracking" | "watching" | "coaching"
 
 export interface Job {
   id: string
   status: JobStatus
+  stage: Stage | null
   created_at: string
   feedback: string | null
   error: string | null
+  swing_count: number | null
 }
 
 export async function uploadVideo(file: File): Promise<{ job_id: string }> {

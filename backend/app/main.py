@@ -64,14 +64,26 @@ class JobStatus(str, Enum):
     ERROR = "error"
 
 
+class Stage(str, Enum):
+    """Pipeline steps, surfaced so the client can show real progress rather
+    than a spinner for the ~30s an analysis takes."""
+
+    TRACKING = "tracking"   # pose extraction + swing segmentation
+    WATCHING = "watching"   # Gemini video perception
+    COACHING = "coaching"   # Claude writes the feedback
+
+
 class Job(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
     status: JobStatus
+    stage: Stage | None = None
     created_at: datetime
     feedback: str | None = None
     error: str | None = None
+    # Lets the UI say "3 swings analysed" without shipping the whole payload.
+    swing_count: int | None = None
 
 
 class UploadResponse(BaseModel):
@@ -84,8 +96,12 @@ def _process_video(job_id: str, video_path: Path) -> None:
     try:
         job = session.get(JobModel, job_id)
         job.status = JobStatus.PROCESSING
-        session.commit()
 
+        def stage(name: str) -> None:
+            job.stage = name
+            session.commit()
+
+        stage(Stage.TRACKING)
         pose = extract_pose_sequence(video_path)
         swings = segment_swings(pose, hand="right")
         if not swings:
@@ -95,14 +111,17 @@ def _process_video(job_id: str, video_path: Path) -> None:
         # Returns None on failure rather than raising -- perception is
         # supplementary, so losing it degrades the analysis to metrics-only
         # instead of failing the job.
+        stage(Stage.WATCHING)
         observations = analyze_video(video_path, pose, swings)
 
+        stage(Stage.COACHING)
         # Persist the evidence, not just the conclusion: chat grounds follow-up
         # questions in these, and without them the feedback is unauditable.
         job.metrics = swing_metrics
         job.observations = observations
         job.feedback = analyze_swings(swing_metrics, observations)
         job.status = JobStatus.DONE
+        job.stage = None
         session.commit()
     except Exception as e:
         job = session.get(JobModel, job_id)
@@ -185,6 +204,8 @@ async def get_video_status(job_id: str) -> Job:
         job = session.get(JobModel, job_id)
         if job is None:
             raise HTTPException(status_code=404, detail="Job not found")
-        return Job.model_validate(job)
+        result = Job.model_validate(job)
+        result.swing_count = len(job.metrics) if job.metrics else None
+        return result
     finally:
         session.close()
