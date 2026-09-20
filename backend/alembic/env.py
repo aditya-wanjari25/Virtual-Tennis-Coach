@@ -24,6 +24,29 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
+# Tables created and owned by libraries at runtime, not by Alembic. LangGraph's
+# PostgresSaver builds these in setup() when the chat agent first runs.
+#
+# Without this filter, autogenerate compares the live database against our
+# models, finds tables it doesn't recognise, and emits DROP statements for
+# them -- which it did, producing a migration that crash-looped on any database
+# where those tables didn't already exist.
+EXTERNALLY_MANAGED_TABLES = {
+    "checkpoints",
+    "checkpoint_blobs",
+    "checkpoint_writes",
+    "checkpoint_migrations",
+}
+
+
+def include_object(object, name, type_, reflected, compare_to):
+    """Keep externally-owned tables out of autogenerate, in both directions."""
+    if type_ == "table" and name in EXTERNALLY_MANAGED_TABLES:
+        return False
+    if type_ == "index" and getattr(object, "table", None) is not None:
+        return object.table.name not in EXTERNALLY_MANAGED_TABLES
+    return True
+
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
 # my_important_option = config.get_main_option("my_important_option")
@@ -46,6 +69,7 @@ def run_migrations_offline() -> None:
     context.configure(
         url=url,
         target_metadata=target_metadata,
+        include_object=include_object,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
@@ -69,7 +93,9 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection,
+            target_metadata=target_metadata,
+            include_object=include_object,
         )
 
         with context.begin_transaction():
