@@ -1,5 +1,6 @@
 import Markdown from 'react-markdown'
 import type { Job } from '../api'
+import { ChatPanel } from './ChatPanel'
 
 const STAGE_LABELS: Record<string, string> = {
   pending: 'Queued…',
@@ -32,20 +33,23 @@ export function StatusView({ job, onReset }: { job: Job; onReset: () => void }) 
   }
 
   return (
-    <div className="flex flex-col gap-6 rounded-2xl border border-neutral-200 dark:border-neutral-800 p-8">
-      <div className="flex items-center gap-2">
-        <span className="text-2xl">🎾</span>
-        <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">Coach's feedback</h2>
+    <>
+      <div className="flex flex-col gap-6 rounded-2xl border border-neutral-200 dark:border-neutral-800 p-8">
+        <div className="flex items-center gap-2">
+          <span className="text-2xl">🎾</span>
+          <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">Coach's feedback</h2>
+        </div>
+        <div className="prose prose-neutral dark:prose-invert max-w-none prose-p:leading-relaxed">
+          <Markdown>{job.feedback}</Markdown>
+        </div>
+        <button
+          onClick={onReset}
+          className="self-start rounded-lg bg-lime-600 px-4 py-2 text-sm font-medium text-white hover:bg-lime-700"
+        >
+          Analyze another video
+        </button>
       </div>
-      <div className="prose prose-neutral dark:prose-invert max-w-none prose-p:leading-relaxed">
-        <Markdown>{job.feedback}</Markdown>
-      </div>
-      <button
-        onClick={onReset}
-        className="self-start rounded-lg bg-lime-600 px-4 py-2 text-sm font-medium text-white hover:bg-lime-700"
-      >
-        Analyze another video
-      </button>
-    </div>
+      <ChatPanel jobId={job.id} />
+    </>
   )
 }

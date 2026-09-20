@@ -28,3 +28,28 @@ export async function getJob(jobId: string): Promise<Job> {
   }
   return res.json()
 }
+
+export interface ChatMessage {
+  role: "user" | "assistant"
+  content: string
+}
+
+export async function sendChat(jobId: string, message: string): Promise<ChatMessage> {
+  const res = await fetch(`${API_BASE_URL}/videos/${jobId}/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message }),
+  })
+  if (!res.ok) {
+    throw new Error(`Coach could not answer (${res.status})`)
+  }
+  return res.json()
+}
+
+export async function getChatHistory(jobId: string): Promise<ChatMessage[]> {
+  const res = await fetch(`${API_BASE_URL}/videos/${jobId}/chat`)
+  if (!res.ok) {
+    throw new Error(`Could not load conversation (${res.status})`)
+  }
+  return res.json()
+}

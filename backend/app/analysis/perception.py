@@ -237,3 +237,80 @@ def analyze_video(
     finally:
         if tmp is not None:
             tmp.cleanup()
+
+
+REWATCH_SYSTEM_INSTRUCTION = """\
+You are watching a short clip of a single tennis groundstroke, filmed from
+behind the baseline, and answering one specific question about it.
+
+Answer only what was asked, in two or three sentences. Describe what you can
+actually see. If the clip doesn't show it clearly -- occluded by the body, too
+fast, out of frame -- say so directly instead of guessing. A plain "I can't
+tell from this angle" is a useful answer; an invented detail is not.
+"""
+
+
+@observe(as_type="generation", name="gemini_rewatch")
+def rewatch(
+    video_path: str | Path,
+    contact_time_s: float,
+    question: str,
+    pre_s: float = 1.2,
+    post_s: float = 0.9,
+) -> str | None:
+    """Re-examine one swing to answer a specific question about it.
+
+    Used by the chat agent when the observations captured during the original
+    analysis don't cover what the player asked. Clips to just that swing --
+    unlike the whole-clip analysis pass, here we already know which swing is
+    being asked about, so the extra frames are only cost.
+
+    Returns None on failure; the caller turns that into a plain message.
+    """
+    video_path = Path(video_path)
+    start = max(0.0, contact_time_s - pre_s)
+    end = contact_time_s + post_s
+
+    tmp = None
+    try:
+        send_path, tmp = _downscaled(video_path)
+        video_b64 = base64.b64encode(send_path.read_bytes()).decode("utf-8")
+
+        result = _client().interactions.create(
+            model=MODEL,
+            system_instruction=REWATCH_SYSTEM_INSTRUCTION,
+            input=[
+                {"type": "text", "text": question},
+                {
+                    "type": "video",
+                    "data": video_b64,
+                    "mime_type": _mime_for(send_path),
+                    "resolution": "high",
+                    "processing": {
+                        "type": "static",
+                        "fps": FPS,
+                        "start_offset": f"{start:.2f}s",
+                        "end_offset": f"{end:.2f}s",
+                    },
+                },
+            ],
+        )
+        answer = getattr(result, "output_text", None) or str(result)
+
+        usage = getattr(result, "usage", None)
+        get_client().update_current_generation(
+            model=MODEL,
+            input=[{"role": "user", "content": question}],
+            output=answer,
+            usage_details=(
+                {"input": usage.total_input_tokens, "output": usage.total_output_tokens} if usage else None
+            ),
+            metadata={"clip": f"{start:.2f}s-{end:.2f}s", "fps": FPS},
+        )
+        return answer
+    except Exception:
+        logger.exception("Gemini rewatch failed")
+        return None
+    finally:
+        if tmp is not None:
+            tmp.cleanup()

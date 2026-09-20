@@ -17,11 +17,13 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from langfuse import get_client, observe
 from pydantic import BaseModel, ConfigDict
 
 from app.agent.analyst import analyze as analyze_swings
+from app.agent.chat import ask as chat_ask, close_pools, history as chat_history
 from app.analysis.metrics import compute_swing_metrics
 from app.analysis.perception import analyze_video
 from app.analysis.phases import segment_swings
@@ -36,6 +38,7 @@ load_dotenv()
 async def lifespan(app: FastAPI):
     yield
     get_client().flush()  # make sure any in-flight traces are sent before the process exits
+    close_pools()  # checkpointer connection pools
 
 
 app = FastAPI(title="Virtual Tennis Coach", lifespan=lifespan)
@@ -134,6 +137,45 @@ async def upload_video(background_tasks: BackgroundTasks, file: UploadFile) -> U
     background_tasks.add_task(_process_video, job_id, video_path)
 
     return UploadResponse(job_id=job_id)
+
+
+class ChatRequest(BaseModel):
+    message: str
+
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+
+@app.post("/videos/{job_id}/chat", response_model=ChatMessage)
+async def post_chat(job_id: str, body: ChatRequest) -> ChatMessage:
+    """Ask a follow-up question about a completed analysis.
+
+    Conversation history is held by the LangGraph checkpointer, keyed on
+    job_id, so the client sends only the new message.
+    """
+    session = get_session()
+    try:
+        job = session.get(JobModel, job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Job not found")
+        if job.status != JobStatus.DONE:
+            raise HTTPException(status_code=409, detail=f"Analysis is {job.status}, not ready for questions")
+    finally:
+        session.close()
+
+    # The agent loop is blocking (LLM + tool calls); run it off the event loop
+    # so it doesn't stall other requests.
+    reply = await run_in_threadpool(chat_ask, job_id, body.message)
+    return ChatMessage(role="assistant", content=reply)
+
+
+@app.get("/videos/{job_id}/chat", response_model=list[ChatMessage])
+async def get_chat(job_id: str) -> list[ChatMessage]:
+    """Past conversation turns, for restoring the UI on load."""
+    turns = await run_in_threadpool(chat_history, job_id)
+    return [ChatMessage(**t) for t in turns]
 
 
 @app.get("/videos/{job_id}", response_model=Job)
