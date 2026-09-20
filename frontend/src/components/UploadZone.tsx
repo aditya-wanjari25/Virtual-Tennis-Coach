@@ -42,7 +42,7 @@ export function UploadZone({ onFileSelected, disabled }: UploadZoneProps) {
             inputRef.current?.click()
           }
         }}
-        className={`group relative overflow-hidden rounded-3xl border-2 border-dashed px-8 py-16 text-center transition-all duration-300
+        className={`group relative overflow-hidden rounded-3xl border-2 border-dashed px-5 py-12 text-center transition-all duration-300 sm:px-8 sm:py-16
           ${disabled ? 'cursor-not-allowed border-ink-700 opacity-50' : 'cursor-pointer'}
           ${
             isDragging

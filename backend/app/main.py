@@ -8,6 +8,9 @@ Postgres so it survives restarts and works across multiple workers.
 
 from __future__ import annotations
 
+import logging
+import os
+import time
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import asdict
@@ -34,9 +37,38 @@ from app.models import JobModel
 
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
+
+VIDEO_RETENTION_DAYS = int(os.environ.get("VIDEO_RETENTION_DAYS", "7"))
+
+
+def _purge_old_videos() -> None:
+    """Delete stored videos past the retention window.
+
+    We stopped deleting videos after analysis so chat's rewatch_swing could use
+    them, which left storage growing without bound. This is the replacement --
+    a sweep at startup, which is enough for a single-instance deployment. Object
+    storage lifecycle rules replace it when this moves to S3.
+    """
+    if not STORAGE_DIR.exists():
+        return
+    cutoff = time.time() - VIDEO_RETENTION_DAYS * 86400
+    freed = 0
+    for path in STORAGE_DIR.iterdir():
+        try:
+            if path.is_file() and path.stat().st_mtime < cutoff:
+                freed += path.stat().st_size
+                path.unlink()
+        except OSError:
+            logger.warning("Could not purge %s", path.name, exc_info=True)
+    if freed:
+        logger.info("Purged %.1f MB of videos older than %d days", freed / 1e6, VIDEO_RETENTION_DAYS)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _purge_old_videos()
     yield
     get_client().flush()  # make sure any in-flight traces are sent before the process exits
     close_pools()  # checkpointer connection pools
@@ -44,12 +76,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Virtual Tennis Coach", lifespan=lifespan)
 
-# Dev-only: allow the Vite frontend (different origin/port) to call this
-# API from the browser. Tighten to the real deployed frontend origin
-# once this goes to production.
+# Which browser origins may call this API. Comma-separated env var so the
+# deployed frontend's origin can be set per environment -- hardcoding localhost
+# means every request from a deployed frontend fails CORS.
+CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "http://localhost:5173").split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )

@@ -42,7 +42,7 @@ export function SwingBreakdown({ jobId }: { jobId: string }) {
 
   return (
     <div className="animate-rise overflow-hidden rounded-3xl border border-ink-700/60 bg-ink-850/40">
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-ink-700/60 px-8 py-5">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-ink-700/60 px-5 py-5 sm:px-8">
         <div>
           <h2 className="font-semibold tracking-tight text-neutral-100">Swing by swing</h2>
           <p className="mt-1 text-sm text-neutral-500">Pick a swing to jump to it in the video.</p>
@@ -68,8 +68,11 @@ export function SwingBreakdown({ jobId }: { jobId: string }) {
         </div>
       </div>
 
-      <div className="p-8">
-        <div className="overflow-hidden rounded-2xl bg-black">
+      <div className="p-5 sm:p-8">
+        {/* Phone footage is portrait, so an unconstrained video is a tall strip
+            with black bars either side on desktop. Cap the height and centre a
+            sensible max width instead. */}
+        <div className="mx-auto max-w-sm overflow-hidden rounded-2xl bg-black">
           <video
             ref={videoRef}
             src={videoUrl(jobId)}
@@ -82,17 +85,17 @@ export function SwingBreakdown({ jobId }: { jobId: string }) {
             // so the listeners never attached and duration stayed 0.
             onLoadedMetadata={(e) => setDuration(e.currentTarget.duration || 0)}
             onTimeUpdate={(e) => setPlayhead(e.currentTarget.currentTime)}
-            className="max-h-[420px] w-full object-contain"
+            className="max-h-[60vh] w-full object-contain"
           />
         </div>
 
         {/* Contact markers. Sits under the video rather than overlaying the
             native controls, which would fight with them on mobile. */}
         {duration > 0 && (
-          <div className="relative mt-3 h-8">
-            <div className="absolute inset-x-0 top-3 h-1 rounded-full bg-ink-700" />
+          <div className="relative mx-auto mt-4 h-11 max-w-sm">
+            <div className="absolute inset-x-0 top-5 h-1 rounded-full bg-ink-700" />
             <div
-              className="absolute top-3 h-1 rounded-full bg-court-500/40"
+              className="absolute top-5 h-1 rounded-full bg-court-500/40"
               style={{ width: `${Math.min(100, (playhead / duration) * 100)}%` }}
             />
             {swings.map((s) => {
@@ -104,11 +107,13 @@ export function SwingBreakdown({ jobId }: { jobId: string }) {
                   onClick={() => seekTo(s.contact_time_s, s.index)}
                   title={`Swing ${s.index} — contact at ${s.contact_time_s.toFixed(1)}s`}
                   aria-label={`Jump to swing ${s.index}`}
-                  className="absolute top-0 -translate-x-1/2"
+                  // 44px hit area (Apple's minimum) with a smaller visible dot —
+                  // 28px targets are genuinely hard to hit with a thumb.
+                  className="absolute top-0 flex h-11 w-11 -translate-x-1/2 items-center justify-center"
                   style={{ left: `${pct}%` }}
                 >
                   <span
-                    className={`block h-7 w-7 rounded-full border-2 text-xs font-semibold leading-[1.5rem] transition-all
+                    className={`flex h-7 w-7 items-center justify-center rounded-full border-2 text-xs font-semibold transition-all
                       ${
                         isActive
                           ? 'scale-110 border-court-400 bg-court-400 text-ink-900'
@@ -123,8 +128,8 @@ export function SwingBreakdown({ jobId }: { jobId: string }) {
           </div>
         )}
 
-        <div className="mt-8 grid gap-6 md:grid-cols-5">
-          <div className="md:col-span-3">
+        <div className="mt-8 grid gap-6 lg:grid-cols-5">
+          <div className="lg:col-span-3">
             <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-500">
               What we saw — swing {current.index}
             </h3>
@@ -141,7 +146,7 @@ export function SwingBreakdown({ jobId }: { jobId: string }) {
             </dl>
           </div>
 
-          <div className="md:col-span-2">
+          <div className="lg:col-span-2">
             <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-500">
               Vs your other swings
             </h3>

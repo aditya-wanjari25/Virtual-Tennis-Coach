@@ -11,7 +11,7 @@ export function StatusView({ job, onReset }: { job: Job; onReset: () => void }) 
 
   if (job.status === 'error') {
     return (
-      <div className="animate-rise flex flex-col gap-4 rounded-3xl border border-red-900/60 bg-red-950/20 p-8">
+      <div className="animate-rise flex flex-col gap-4 rounded-3xl border border-red-900/60 bg-red-950/20 p-5 sm:p-8">
         <div className="flex items-center gap-2.5">
           <span className="text-xl">⚠️</span>
           <h2 className="font-semibold text-red-300">Couldn't analyze this one</h2>
@@ -36,7 +36,7 @@ export function StatusView({ job, onReset }: { job: Job; onReset: () => void }) 
       <div className="animate-rise overflow-hidden rounded-3xl border border-ink-700/60 bg-ink-850/40">
         <div className="h-1 bg-gradient-to-r from-court-600 via-court-400 to-court-600" />
 
-        <div className="p-8">
+        <div className="p-5 sm:p-8">
           <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <span className="text-xl">🎾</span>

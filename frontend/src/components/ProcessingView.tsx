@@ -19,7 +19,7 @@ export function ProcessingView({ stage }: { stage: Stage | null }) {
         <div className="animate-sweep absolute inset-y-0 w-1/2 bg-gradient-to-r from-transparent via-court-400 to-transparent" />
       </div>
 
-      <div className="p-8">
+      <div className="p-5 sm:p-8">
         <div className="mb-8">
           <h2 className="text-lg font-semibold tracking-tight text-neutral-100">Analyzing</h2>
         </div>

@@ -3,8 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <!-- viewport-fit=cover so the layout extends under the notch on iPhones,
+         which matters here because the use case is filming on a phone. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0a0b0d" />
+
+    <title>Virtual Tennis Coach — analyse your groundstrokes</title>
+    <meta
+      name="description"
+      content="Upload a video of your groundstrokes and get specific, measured coaching feedback — then ask follow-up questions about it."
+    />
+
+    <meta property="og:title" content="Virtual Tennis Coach" />
+    <meta
+      property="og:description"
+      content="Upload a video of your groundstrokes and get specific, measured coaching feedback."
+    />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
     <div id="root"></div>

@@ -52,7 +52,7 @@ export function ChatPanel({ jobId }: { jobId: string }) {
   }
 
   return (
-    <div className="animate-rise flex flex-col gap-5 rounded-3xl border border-ink-700/60 bg-ink-850/40 p-8">
+    <div className="animate-rise flex flex-col gap-5 rounded-3xl border border-ink-700/60 bg-ink-850/40 p-5 sm:p-8">
       <div className="flex items-center gap-2.5">
         <span className="text-xl">💬</span>
         <h2 className="font-semibold tracking-tight text-neutral-100">Ask your coach</h2>
@@ -121,12 +121,12 @@ export function ChatPanel({ jobId }: { jobId: string }) {
           onChange={(e) => setDraft(e.target.value)}
           placeholder="Was my elbow bent at contact?"
           disabled={mutation.isPending}
-          className="flex-1 rounded-xl border border-ink-600 bg-ink-900/60 px-4 py-2.5 text-sm text-neutral-100 transition-colors placeholder:text-neutral-600 focus:border-court-500 focus:outline-none disabled:opacity-50"
+          className="flex-1 rounded-xl border border-ink-600 bg-ink-900/60 px-4 py-3 text-base sm:text-sm text-neutral-100 transition-colors placeholder:text-neutral-600 focus:border-court-500 focus:outline-none disabled:opacity-50"
         />
         <button
           type="submit"
           disabled={mutation.isPending || !draft.trim()}
-          className="rounded-xl bg-court-500 px-5 py-2.5 text-sm font-semibold text-ink-900 transition-colors hover:bg-court-400 disabled:opacity-30"
+          className="shrink-0 rounded-xl bg-court-500 px-5 py-3 text-sm font-semibold text-ink-900 transition-colors hover:bg-court-400 disabled:opacity-30"
         >
           Ask
         </button>
