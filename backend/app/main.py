@@ -23,6 +23,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from langfuse import get_client, observe
 from pydantic import BaseModel, ConfigDict
 
@@ -332,6 +333,14 @@ async def get_chat(job_id: str) -> list[ChatMessage]:
     return [ChatMessage(**t) for t in turns]
 
 
+@app.get("/healthz")
+async def healthz() -> dict[str, str]:
+    """Liveness probe for the platform. Deliberately does not touch the DB --
+    it answers 'is this process up', not 'is everything healthy', so a slow
+    database can't cause the platform to kill an otherwise-fine machine."""
+    return {"status": "ok"}
+
+
 @app.get("/videos/{job_id}", response_model=Job)
 async def get_video_status(job_id: str) -> Job:
     session = get_session()
@@ -344,3 +353,17 @@ async def get_video_status(job_id: str) -> Job:
         return result
     finally:
         session.close()
+
+
+# --- Static frontend -------------------------------------------------------
+# Mounted LAST, on purpose. A mount at "/" matches everything, so registering
+# it before the API routes above would shadow them all. In production the
+# Docker build drops the compiled Vite output here; in local dev the directory
+# doesn't exist and the frontend runs separately on the Vite dev server, which
+# is why this is conditional rather than assumed.
+STATIC_DIR = Path(__file__).parents[1] / "static"
+
+if STATIC_DIR.is_dir():
+    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
+else:
+    logger.info("No static/ directory — API only (frontend served by Vite in dev)")

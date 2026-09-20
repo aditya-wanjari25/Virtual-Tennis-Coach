@@ -1,3 +1,20 @@
+# ---------- stage 1: build the frontend ----------
+# The built assets are served by FastAPI in stage 2, so the app is one origin.
+# That removes CORS from the deployed setup entirely rather than configuring it.
+FROM node:22-slim AS frontend
+
+WORKDIR /ui
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+
+COPY frontend/ ./
+# Empty base URL => the client calls /videos rather than http://host/videos,
+# i.e. relative to whatever origin served the page.
+ENV VITE_API_BASE_URL=""
+RUN npm run build
+
+
+# ---------- stage 2: the API, which also serves the UI ----------
 FROM python:3.13-slim
 
 # libgl1/libglib2.0-0 etc are needed by opencv-python and mediapipe at
@@ -29,12 +46,14 @@ RUN mkdir -p cv_spike/models && \
     curl -fsSL -o cv_spike/models/pose_landmarker_full.task \
       "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task"
 
-# Copy dependency files first so `uv sync` is cached unless deps change
-COPY pyproject.toml uv.lock ./
+# Dependency files first so `uv sync` is cached unless deps change
+COPY backend/pyproject.toml backend/uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
-COPY . .
+COPY backend/ .
 RUN uv sync --frozen --no-dev
+
+COPY --from=frontend /ui/dist ./static
 
 ENV PATH="/app/.venv/bin:$PATH"
 

@@ -1,0 +1,50 @@
+# Fly.io config. One app serving both the API and the built frontend, so the
+# deployed setup is same-origin and needs no CORS at all.
+#
+# Deploy:   fly deploy
+# Secrets:  fly secrets set ANTHROPIC_API_KEY=... GEMINI_API_KEY=... (etc)
+
+app = "virtual-tennis-coach"
+primary_region = "iad"
+
+[build]
+  dockerfile = "backend/Dockerfile"
+
+[env]
+  VIDEO_RETENTION_DAYS = "7"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  # Scale to zero when idle -- this is a personal project, not a service that
+  # needs to be warm 24/7. First request after a sleep pays a cold start.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = "requests"
+    # Analysis is CPU-heavy (pose extraction) and holds a video in memory.
+    # Low limits so a burst queues rather than OOMs the machine.
+    soft_limit = 4
+    hard_limit = 8
+
+  [[http_service.checks]]
+    path = "/healthz"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "20s"
+
+[[vm]]
+  # 1GB: the 9.4MB pose model plus frame-by-frame video decoding OOMs a 512MB
+  # machine during extraction. Measured need, not a guess.
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1
+
+# Uploaded videos live here so chat's rewatch_swing can re-examine a swing
+# after the analysis finishes. Without a volume they'd vanish on every deploy,
+# since Fly machine filesystems are ephemeral.
+[[mounts]]
+  source = "tennis_storage"
+  destination = "/app/storage"

@@ -1,0 +1,19 @@
+# Build context is the repo root, since the image builds the frontend and the
+# backend in one multi-stage build.
+
+**/.venv/
+**/__pycache__/
+**/*.pyc
+**/.env
+**/node_modules/
+**/dist/
+
+backend/storage/
+backend/cv_spike/output/
+backend/cv_spike/sample_videos/
+# Fetched in the Dockerfile instead, so the build works from a clean clone.
+backend/cv_spike/models/
+
+.git/
+**/.DS_Store
+note.txt
