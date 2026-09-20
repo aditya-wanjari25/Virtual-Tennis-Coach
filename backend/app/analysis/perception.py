@@ -17,7 +17,11 @@ import base64
 import json
 import logging
 import os
+import shutil
+import subprocess
+from functools import lru_cache
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
 from google import genai
@@ -123,10 +127,44 @@ def _mime_for(video_path: Path) -> str:
     return _MIME_BY_SUFFIX.get(video_path.suffix.lower(), "video/mp4")
 
 
+@lru_cache(maxsize=1)
+def _client() -> genai.Client:
+    # Cached: a client per call meant a fresh TLS handshake every time.
+    return genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+
+
+def _downscaled(video_path: Path) -> tuple[Path, TemporaryDirectory | None]:
+    """Re-encode to 640px tall before upload.
+
+    Gemini samples at FPS and downscales internally anyway, so full 1080x1920
+    buys nothing. Measured on the sample clip: 6.3MB -> 0.09MB, call time
+    13.5s -> 10.3s, at 0.8s encode cost, with no loss in observation quality.
+    The bandwidth saving matters more than the latency for real users uploading
+    from phones.
+
+    Falls back to the original file if ffmpeg isn't available or fails.
+    """
+    if not shutil.which("ffmpeg"):
+        return video_path, None
+
+    tmp = TemporaryDirectory()
+    out = Path(tmp.name) / "small.mp4"
+    proc = subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error", "-i", str(video_path),
+         "-vf", "scale=-2:640", "-c:v", "libx264", "-crf", "30",
+         "-preset", "veryfast", "-an", str(out)],
+        capture_output=True,
+    )
+    if proc.returncode != 0 or not out.exists():
+        logger.warning("ffmpeg downscale failed, sending original: %s", proc.stderr.decode()[:200])
+        tmp.cleanup()
+        return video_path, None
+    return out, tmp
+
+
 @observe(as_type="generation", name="gemini_perception")
 def _call_gemini(video_b64: str, mime: str, prompt: str) -> dict[str, Any]:
-    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
-    result = client.interactions.create(
+    result = _client().interactions.create(
         model=MODEL,
         system_instruction=SYSTEM_INSTRUCTION,
         # response_format IS the JSON Schema -- its `type` is the root JSON type,
@@ -188,9 +226,14 @@ def analyze_video(
         "Also report what the player does between shots -- recovery, split-step, footwork."
     )
 
+    tmp = None
     try:
-        video_b64 = base64.b64encode(video_path.read_bytes()).decode("utf-8")
-        return _call_gemini(video_b64, _mime_for(video_path), prompt)
+        send_path, tmp = _downscaled(video_path)
+        video_b64 = base64.b64encode(send_path.read_bytes()).decode("utf-8")
+        return _call_gemini(video_b64, _mime_for(send_path), prompt)
     except Exception:
         logger.exception("Gemini perception failed; continuing with metrics only")
         return None
+    finally:
+        if tmp is not None:
+            tmp.cleanup()

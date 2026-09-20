@@ -21,7 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from langfuse import get_client, observe
 from pydantic import BaseModel, ConfigDict
 
-from app.agent.graph import build_graph
+from app.agent.analyst import analyze as analyze_swings
 from app.analysis.metrics import compute_swing_metrics
 from app.analysis.perception import analyze_video
 from app.analysis.phases import segment_swings
@@ -94,10 +94,7 @@ def _process_video(job_id: str, video_path: Path) -> None:
         # it degrades the analysis to metrics-only instead of failing the job.
         observations = analyze_video(video_path, pose, swings)
 
-        graph = build_graph()
-        result = graph.invoke({"swings": swing_metrics, "observations": observations})
-
-        job.feedback = result["feedback"]
+        job.feedback = analyze_swings(swing_metrics, observations)
         job.status = JobStatus.DONE
         session.commit()
     except Exception as e:
@@ -115,8 +112,11 @@ async def upload_video(background_tasks: BackgroundTasks, file: UploadFile) -> U
     job_id = str(uuid.uuid4())
     video_path = STORAGE_DIR / f"{job_id}{Path(file.filename or '').suffix or '.mp4'}"
 
+    # Stream to disk in chunks. `await file.read()` pulls the whole video into
+    # memory first -- a 100MB upload is a 100MB spike, per concurrent request.
     with open(video_path, "wb") as f:
-        f.write(await file.read())
+        while chunk := await file.read(1024 * 1024):
+            f.write(chunk)
 
     session = get_session()
     try:
