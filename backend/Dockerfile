@@ -9,11 +9,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsm6 \
     libxext6 \
     libxrender1 \
+    # ffmpeg downscales video before it goes to Gemini. Without it the code
+    # falls back to sending the original -- no crash, but a 70x larger upload
+    # and a slower call, which is the kind of regression you'd never notice.
+    ffmpeg \
+    # curl fetches the pose model below.
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
+
+# The MediaPipe pose model is a 9.4MB binary, deliberately not committed to
+# git. Fetching it at build time keeps the repo light AND keeps the build
+# self-contained -- relying on the local file meant the image only worked when
+# built from a working copy that happened to have it, not from a clean clone.
+RUN mkdir -p cv_spike/models && \
+    curl -fsSL -o cv_spike/models/pose_landmarker_full.task \
+      "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task"
 
 # Copy dependency files first so `uv sync` is cached unless deps change
 COPY pyproject.toml uv.lock ./

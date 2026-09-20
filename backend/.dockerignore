@@ -5,4 +5,6 @@ __pycache__/
 storage/
 cv_spike/output/
 cv_spike/sample_videos/
+# Fetched in the Dockerfile instead, so the build works from a clean clone.
+cv_spike/models/
 .DS_Store
