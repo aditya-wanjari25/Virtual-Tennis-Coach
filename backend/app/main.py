@@ -89,11 +89,15 @@ def _process_video(job_id: str, video_path: Path) -> None:
             raise ValueError("No swings detected in video")
         swing_metrics = [asdict(compute_swing_metrics(pose, s, hand="right")) for s in swings]
 
-        # Must run before the `finally` below deletes the video. Returns None on
-        # failure rather than raising -- perception is supplementary, so losing
-        # it degrades the analysis to metrics-only instead of failing the job.
+        # Returns None on failure rather than raising -- perception is
+        # supplementary, so losing it degrades the analysis to metrics-only
+        # instead of failing the job.
         observations = analyze_video(video_path, pose, swings)
 
+        # Persist the evidence, not just the conclusion: chat grounds follow-up
+        # questions in these, and without them the feedback is unauditable.
+        job.metrics = swing_metrics
+        job.observations = observations
         job.feedback = analyze_swings(swing_metrics, observations)
         job.status = JobStatus.DONE
         session.commit()
@@ -104,7 +108,9 @@ def _process_video(job_id: str, video_path: Path) -> None:
         session.commit()
     finally:
         session.close()
-        video_path.unlink(missing_ok=True)
+        # The video is deliberately NOT deleted here -- chat's rewatch_swing
+        # tool needs it to re-examine a specific swing. Retention is unbounded
+        # for now; a lifecycle policy belongs with the move to S3.
 
 
 @app.post("/videos", response_model=UploadResponse)
@@ -120,7 +126,7 @@ async def upload_video(background_tasks: BackgroundTasks, file: UploadFile) -> U
 
     session = get_session()
     try:
-        session.add(JobModel(id=job_id, status=JobStatus.PENDING))
+        session.add(JobModel(id=job_id, status=JobStatus.PENDING, video_key=video_path.name))
         session.commit()
     finally:
         session.close()
