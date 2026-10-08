@@ -1,5 +1,9 @@
 """System prompt for the analysis step.
 
+The containment framing is appended rather than written inline so there is one
+copy of it shared with the chat prompt -- the rule it states has to be
+identical in both places, since both receive the same untrusted observations.
+
 This was three prompts feeding three sequential Claude calls (analyst ->
 prioritizer -> coach). Measured: the chain cost ~46s and produced output no
 better than a single call doing all three jobs in ~8s. The decomposition was a
@@ -9,7 +13,9 @@ and forcing it through two English handoffs lost more than it gained.
 Kept separate from graph.py so prompt iteration doesn't touch the wiring.
 """
 
-ANALYZE_AND_COACH_SYSTEM_PROMPT = """\
+from app.guardrails.containment import CONTAINMENT_FRAMING
+
+_ANALYZE_AND_COACH_SYSTEM_PROMPT = """\
 You are a tennis coach reviewing a player's groundstrokes, filmed from behind \
 the baseline. You are given TWO kinds of evidence, and they are not equally \
 reliable. Treat them differently.
@@ -76,3 +82,5 @@ Two hard rules:
 2. OPEN WITH SOMETHING THEY'RE DOING WELL -- one or two sentences, specific
    and genuine, not flattery. Then the things to work on.
 """
+
+ANALYZE_AND_COACH_SYSTEM_PROMPT = f"{_ANALYZE_AND_COACH_SYSTEM_PROMPT}\n{CONTAINMENT_FRAMING}"

@@ -23,7 +23,7 @@ from functools import lru_cache
 from typing import Annotated, TypedDict
 
 from langchain_anthropic import ChatAnthropic
-from langchain_core.messages import AnyMessage, SystemMessage
+from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage
 from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
@@ -31,10 +31,12 @@ from langgraph.prebuilt import ToolNode, tools_condition
 from psycopg_pool import ConnectionPool
 
 from app.agent.chat_tools import CHAT_TOOLS
+from app.guardrails.classify import REFUSALS, ChatVerdict, screen_chat_message
+from app.guardrails.containment import CONTAINMENT_FRAMING
 
 MODEL = "claude-sonnet-5"
 
-SYSTEM_PROMPT = """\
+_SYSTEM_PROMPT = """\
 You are the tennis coach who analysed this player's practice video, answering \
 their follow-up questions. You already gave them written feedback; they can see \
 it. Now they're asking about it.
@@ -58,6 +60,11 @@ Two things to carry over from the original feedback:
   conversation, so match their question's scope: a one-line question gets a
   one-line answer, not a lecture.
 """
+
+# get_observations and rewatch_swing both return contained text, so the chat
+# model needs the same framing as the analysis call -- without it the tags are
+# just noise in a tool result.
+SYSTEM_PROMPT = f"{_SYSTEM_PROMPT}\n{CONTAINMENT_FRAMING}"
 
 
 class ChatState(TypedDict):
@@ -142,6 +149,21 @@ def _text_of(message) -> str:
     )
 
 
+def record_turn(graph, config: dict, job_id: str, message: str, reply: str) -> None:
+    """Write a question and its answer into graph state without running the graph.
+
+    Needed because a refused turn still has to exist in the conversation. The
+    client refetches history from the checkpointer after every send, so a reply
+    that was only returned over HTTP would appear once and then vanish on the
+    refetch -- leaving the player looking at their own question with no answer
+    under it.
+    """
+    graph.update_state(
+        config,
+        {"messages": [HumanMessage(content=message), AIMessage(content=reply)], "job_id": job_id},
+    )
+
+
 def ask(job_id: str, message: str) -> str:
     """Send one user message; returns the assistant's reply.
 
@@ -149,6 +171,16 @@ def ask(job_id: str, message: str) -> str:
     thread_id -- so the caller passes only the new message, not the transcript.
     """
     config = {"configurable": {"thread_id": job_id}}
+
+    # Screened before the agent runs, so a refused message never reaches the
+    # model, the tools, or the video. The refusal is recorded as a real turn
+    # rather than returned on the side -- see record_turn.
+    verdict = screen_chat_message(message)
+    if verdict is not ChatVerdict.OK:
+        reply = REFUSALS[verdict]
+        record_turn(_graph(), config, job_id, message, reply)
+        return reply
+
     result = _graph().invoke(
         {"messages": [{"role": "user", "content": message}], "job_id": job_id},
         config=config,

@@ -17,6 +17,7 @@ from langchain_core.tools import tool
 from langgraph.prebuilt import InjectedState
 
 from app.db import get_session
+from app.guardrails.containment import contain
 from app.models import JobModel
 
 logger = logging.getLogger(__name__)
@@ -85,7 +86,11 @@ def get_observations(swing_number: int, state: Annotated[dict, InjectedState]) -
     if s is None:
         return f"No observations for swing {swing_number}. This video has {len(obs.get('swings', []))} swing(s)."
     extra = {k: obs[k] for k in ("between_shots", "across_swings", "doing_well") if k in obs}
-    return json.dumps({"this_swing": s, "whole_session": extra}, indent=2)
+    # Model-written prose about arbitrary uploaded footage -- contained for the
+    # same reason it is on the analysis path. A tool result is prompt too.
+    return contain(
+        {"this_swing": s, "whole_session": extra}, source="gemini-video-perception"
+    )
 
 
 @tool
@@ -112,7 +117,9 @@ def rewatch_swing(swing_number: int, question: str, state: Annotated[dict, Injec
         return "The video file for this session is no longer on disk."
 
     answer = rewatch(video_path, contact_time_s=float(contact), question=question)
-    return answer or "Could not re-examine the video just now -- the vision service failed."
+    if not answer:
+        return "Could not re-examine the video just now -- the vision service failed."
+    return contain(answer, source="gemini-rewatch")
 
 
 CHAT_TOOLS = [get_swing_metrics, get_observations, rewatch_swing]
