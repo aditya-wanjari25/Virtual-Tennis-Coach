@@ -26,4 +26,14 @@ dependencies = [
 [dependency-groups]
 dev = [
     "matplotlib>=3.11.2",
+    "pytest>=9.0.1",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Makes `app` and `tests.conftest` importable without installing the project
+# or scattering sys.path edits through the suite.
+pythonpath = ["."]
+# Fixtures shell out to ffmpeg and the extraction tests run MediaPipe, so a
+# slow test is expected; surface the slowest few rather than guessing.
+addopts = "-q --durations=5"
