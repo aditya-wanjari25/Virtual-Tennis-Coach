@@ -32,6 +32,19 @@ def _job(state: dict) -> JobModel | None:
         session.close()
 
 
+def _stored_video(video_key: str) -> Path | None:
+    """Resolve a job's video_key inside STORAGE_DIR, or None.
+
+    video_key is server-generated today, so this isn't currently reachable --
+    but main.get_video_file already guards the same join, and having one of two
+    paths to the same directory unguarded is how that stops being true.
+    """
+    path = (STORAGE_DIR / video_key).resolve()
+    if not path.is_relative_to(STORAGE_DIR.resolve()) or not path.exists():
+        return None
+    return path
+
+
 def _nth(items: list | None, swing_number: int) -> Any | None:
     """Swing numbers are 1-based for the player; lists are 0-based."""
     if not items or swing_number < 1 or swing_number > len(items):
@@ -94,8 +107,8 @@ def rewatch_swing(swing_number: int, question: str, state: Annotated[dict, Injec
     if contact is None:
         return f"No swing {swing_number} in this video (it has {len(job.metrics)})."
 
-    video_path = STORAGE_DIR / job.video_key
-    if not video_path.exists():
+    video_path = _stored_video(job.video_key)
+    if video_path is None:
         return "The video file for this session is no longer on disk."
 
     answer = rewatch(video_path, contact_time_s=float(contact), question=question)

@@ -1,5 +1,32 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000"
 
+/** Upload limits, mirrored from the backend guardrails for pre-checks and
+ *  copy. The server is the authority -- these only exist so an oversized file
+ *  fails instantly instead of after a long pointless upload. */
+export const LIMITS = {
+  maxUploadMB: 100,
+  maxDurationS: 90,
+  maxChatChars: 2000,
+} as const
+
+/** Pull FastAPI's error message out of a failed response.
+ *
+ *  HTTPException sends {detail: "..."}; Pydantic validation failures send
+ *  {detail: [{...}, ...]}. The guardrails put a player-readable sentence in
+ *  the first form, so showing it beats showing a status code -- "that clip is
+ *  120s long, the limit is 90s" is actionable where "Upload failed (422)" is
+ *  not. The list form is a schema bug rather than something a user can fix,
+ *  so that falls back to the generic message. */
+async function errorMessage(res: Response, fallback: string): Promise<string> {
+  try {
+    const body = await res.json()
+    if (typeof body?.detail === "string" && body.detail.trim()) return body.detail
+  } catch {
+    // Non-JSON body (a proxy's HTML 413 page, say) -- nothing to extract.
+  }
+  return `${fallback} (${res.status})`
+}
+
 export type JobStatus = "pending" | "processing" | "done" | "error"
 export type Stage = "tracking" | "watching" | "coaching"
 
@@ -19,7 +46,7 @@ export async function uploadVideo(file: File): Promise<{ job_id: string }> {
 
   const res = await fetch(`${API_BASE_URL}/videos`, { method: "POST", body: formData })
   if (!res.ok) {
-    throw new Error(`Upload failed (${res.status})`)
+    throw new Error(await errorMessage(res, "Upload failed"))
   }
   return res.json()
 }
@@ -67,7 +94,7 @@ export async function sendChat(jobId: string, message: string): Promise<ChatMess
     body: JSON.stringify({ message }),
   })
   if (!res.ok) {
-    throw new Error(`Coach could not answer (${res.status})`)
+    throw new Error(await errorMessage(res, "Coach could not answer"))
   }
   return res.json()
 }

@@ -25,7 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from langfuse import get_client, observe
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.agent.analyst import analyze as analyze_swings
 from app.agent.chat import ask as chat_ask, close_pools, history as chat_history
@@ -34,6 +34,13 @@ from app.analysis.perception import analyze_video
 from app.analysis.phases import segment_swings
 from app.analysis.pose_extraction import extract_pose_sequence
 from app.db import get_session
+from app.guardrails import (
+    MAX_CHAT_CHARS,
+    VideoRejected,
+    check_filename,
+    stream_to_disk,
+    validate_video_file,
+)
 from app.models import JobModel
 
 load_dotenv()
@@ -173,14 +180,27 @@ def _process_video(job_id: str, video_path: Path) -> None:
 
 @app.post("/videos", response_model=UploadResponse)
 async def upload_video(background_tasks: BackgroundTasks, file: UploadFile) -> UploadResponse:
-    job_id = str(uuid.uuid4())
-    video_path = STORAGE_DIR / f"{job_id}{Path(file.filename or '').suffix or '.mp4'}"
-
-    # Stream to disk in chunks. `await file.read()` pulls the whole video into
-    # memory first -- a 100MB upload is a 100MB spike, per concurrent request.
-    with open(video_path, "wb") as f:
-        while chunk := await file.read(1024 * 1024):
-            f.write(chunk)
+    # Validate before the job row and background task exist, so a bad upload
+    # gets an immediate, specific error instead of becoming a job the client
+    # only discovers has failed ~30s later behind a polling spinner.
+    #
+    # stream_to_disk also replaces the unbounded read loop that used to live
+    # here: it streams in chunks (so a 100MB upload isn't a 100MB memory spike)
+    # AND stops at the size cap, which the old loop had no notion of.
+    video_path: Path | None = None
+    try:
+        suffix = check_filename(file.filename)
+        job_id = str(uuid.uuid4())
+        video_path = STORAGE_DIR / f"{job_id}{suffix}"
+        await stream_to_disk(file, video_path)
+        validate_video_file(video_path)
+    except VideoRejected as e:
+        # unlink is idempotent here -- stream_to_disk cleans up its own partial
+        # writes, so this is for the probe rejecting a fully-written file.
+        if video_path is not None:
+            video_path.unlink(missing_ok=True)
+        logger.info("Rejected upload (%d): %s", e.status, e.detail)
+        raise HTTPException(status_code=e.status, detail=e.detail) from e
 
     session = get_session()
     try:
@@ -295,7 +315,9 @@ async def get_video_file(job_id: str) -> FileResponse:
 
 
 class ChatRequest(BaseModel):
-    message: str
+    # Capped so a scripted request can't run up an unbounded token bill. Far
+    # above anything typed into a chat box; it's a ceiling, not a budget.
+    message: str = Field(min_length=1, max_length=MAX_CHAT_CHARS)
 
 
 class ChatMessage(BaseModel):

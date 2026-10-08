@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
-import { getChatHistory, sendChat, type ChatMessage } from '../api'
+import { LIMITS, getChatHistory, sendChat, type ChatMessage } from '../api'
 
 const SUGGESTIONS = [
   'Which swing was my best?',
@@ -120,6 +120,9 @@ export function ChatPanel({ jobId }: { jobId: string }) {
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           placeholder="Was my elbow bent at contact?"
+          // Matches the server's cap, so the limit is felt as the field simply
+          // stopping rather than as a 422 after pressing Ask.
+          maxLength={LIMITS.maxChatChars}
           disabled={mutation.isPending}
           className="flex-1 rounded-xl border border-ink-600 bg-ink-900/60 px-4 py-3 text-base sm:text-sm text-neutral-100 transition-colors placeholder:text-neutral-600 focus:border-court-500 focus:outline-none disabled:opacity-50"
         />
