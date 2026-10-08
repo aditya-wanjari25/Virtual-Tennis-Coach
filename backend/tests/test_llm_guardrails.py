@@ -300,3 +300,60 @@ def test_screening_still_works_when_langfuse_is_down(monkeypatch):
     monkeypatch.setattr(tracing, "get_client", lambda: Broken())
     monkeypatch.setattr(classify, "_ask", lambda *a: "MEDICAL")
     assert screen_chat_message("my elbow hurts") is ChatVerdict.MEDICAL
+
+
+# --- every analysis outcome is recorded ------------------------------------
+# Before this, the four ways analyze() can finish were distinguishable only by
+# reading stdout -- including the one where the player gets no coaching at all.
+
+@pytest.fixture
+def outcomes(monkeypatch) -> list[tuple]:
+    """Captures analysis_outcome scores."""
+    seen: list[tuple] = []
+    monkeypatch.setattr(analyst, "score", lambda name, value, comment=None: seen.append((name, value)))
+    monkeypatch.setattr(analyst, "record", lambda **kw: None)
+    return seen
+
+
+def test_clean_analysis_records_its_outcome(drafts, outcomes, monkeypatch):
+    _verdicts(monkeypatch, FeedbackVerdict.OK)
+    analyst.analyze([{"contact_time_s": 1.0}])
+    assert outcomes == [("analysis_outcome", "clean")]
+
+
+def test_repaired_analysis_records_its_outcome(drafts, outcomes, monkeypatch):
+    _verdicts(monkeypatch, FeedbackVerdict.MEDICAL, FeedbackVerdict.OK)
+    analyst.analyze([{"contact_time_s": 1.0}])
+    assert outcomes == [("analysis_outcome", "repaired")]
+
+
+def test_withheld_analysis_records_its_outcome(drafts, outcomes, monkeypatch):
+    """The one that matters most: a player got the fallback, not coaching.
+
+    This is the event worth alerting on, and a score is what makes that
+    possible -- a logger.error reaches stdout and nothing else.
+    """
+    _verdicts(monkeypatch, FeedbackVerdict.MEDICAL, FeedbackVerdict.MEDICAL)
+    assert analyst.analyze([{"contact_time_s": 1.0}]) == MEDICAL_FALLBACK
+    assert outcomes == [("analysis_outcome", "withheld")]
+
+
+def test_shipped_ungrounded_records_its_outcome(drafts, outcomes, monkeypatch):
+    _verdicts(monkeypatch, FeedbackVerdict.UNGROUNDED, FeedbackVerdict.UNGROUNDED)
+    analyst.analyze([{"contact_time_s": 1.0}])
+    assert outcomes == [("analysis_outcome", "shipped_ungrounded")]
+
+
+def test_every_exit_path_records_exactly_one_outcome(drafts, outcomes, monkeypatch):
+    """A path that records nothing would be invisible; one that records twice
+    would double-count. Both are failures of the thing this is for."""
+    for sequence in [
+        (FeedbackVerdict.OK,),
+        (FeedbackVerdict.MEDICAL, FeedbackVerdict.OK),
+        (FeedbackVerdict.MEDICAL, FeedbackVerdict.MEDICAL),
+        (FeedbackVerdict.UNGROUNDED, FeedbackVerdict.UNGROUNDED),
+    ]:
+        outcomes.clear()
+        _verdicts(monkeypatch, *sequence)
+        analyst.analyze([{"contact_time_s": 1.0}])
+        assert len(outcomes) == 1, f"{sequence} recorded {len(outcomes)} outcomes"

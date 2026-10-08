@@ -90,8 +90,8 @@ def _decided(verdict, score_name: str, note: str | None = None) -> None:
     were before -- reads as instrumented on a dashboard while answering none of
     the questions a guardrail dashboard exists for.
     """
-    record(output=verdict.value)
-    score(score_name, verdict.value, comment=note)
+    record(output=verdict.value, metadata={"verdict_reason": note} if note else {})
+    score(score_name, verdict.value)
 
 
 # --- screening a player's question -----------------------------------------

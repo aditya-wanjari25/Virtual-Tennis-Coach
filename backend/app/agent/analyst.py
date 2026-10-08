@@ -29,6 +29,7 @@ from app.guardrails.classify import (
     review_feedback,
 )
 from app.guardrails.containment import contain
+from app.tracing import record, score
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,24 @@ def _draft(user_content: str, previous: str | None = None, repair: str | None = 
     return text
 
 
+def _outcome(name: str, feedback: str, note: str | None = None) -> str:
+    """Record how an analysis ended, and return its feedback unchanged.
+
+    The four ways analyze() can finish differ in ways that matter
+    operationally -- one of them means the player got no coaching at all -- and
+    they were previously distinguishable only by reading stdout. Recorded as a
+    score rather than only a log line because a score is countable, chartable
+    and alertable; "how often are we withholding feedback" is the question this
+    exists to answer.
+    """
+    metadata: dict[str, str] = {"analysis_outcome": name}
+    if note:
+        metadata["analysis_outcome_reason"] = note
+    record(metadata=metadata)
+    score("analysis_outcome", name)
+    return feedback
+
+
 @observe(name="analyze_with_review")
 def analyze(swings: list[dict], observations: dict[str, Any] | None = None) -> str:
     """Produce the player-facing coaching feedback, reviewed before it ships.
@@ -119,18 +138,18 @@ def analyze(swings: list[dict], observations: dict[str, Any] | None = None) -> s
     text = _draft(user_content)
     verdict = review_feedback(text, user_content)
     if verdict is FeedbackVerdict.OK:
-        return text
+        return _outcome("clean", text)
 
     logger.warning("Feedback failed review (%s); attempting one repair", verdict)
     repaired = _draft(user_content, previous=text, repair=REPAIR_INSTRUCTIONS[verdict])
 
     second = review_feedback(repaired, user_content)
     if second is FeedbackVerdict.OK:
-        return repaired
+        return _outcome("repaired", repaired, f"first draft was {verdict.value}")
 
     if second is FeedbackVerdict.MEDICAL:
         logger.error("Feedback still gave medical advice after repair; withholding it")
-        return MEDICAL_FALLBACK
+        return _outcome("withheld", MEDICAL_FALLBACK, "medical advice survived repair")
 
     logger.warning("Feedback still reviewed as %s after repair; shipping it anyway", second)
-    return repaired
+    return _outcome("shipped_ungrounded", repaired, f"{second.value} survived repair")

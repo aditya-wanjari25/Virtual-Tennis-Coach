@@ -207,7 +207,7 @@ async def upload_video(background_tasks: BackgroundTasks, file: UploadFile) -> U
         # can't answer "are real users hitting these limits" -- which is the
         # signal that tells us a limit is set wrong rather than working.
         record(output=e.detail, metadata={"status": e.status})
-        score("upload_outcome", "rejected", comment=e.detail)
+        score("upload_outcome", "rejected")
         raise HTTPException(status_code=e.status, detail=e.detail) from e
 
     session = get_session()

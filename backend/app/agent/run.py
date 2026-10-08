@@ -20,7 +20,9 @@ from app.analysis.phases import segment_swings
 load_dotenv()
 
 
-@observe(name="analyze_swing_video")
+# Deliberately not "analyze_swing_video": that is the API's trace name, and
+# sharing it would make CLI runs indistinguishable from real ones.
+@observe(name="analyze_swing_video_cli")
 def analyze(landmarks_path: str | Path) -> str:
     """Metrics-only path -- this CLI works from a landmarks JSON, so there is no
     video to run perception on. Feedback will cover what the metrics can see."""

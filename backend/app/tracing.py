@@ -28,16 +28,20 @@ def record(**fields) -> None:
         logger.debug("Could not record span fields", exc_info=True)
 
 
-def score(name: str, value: str, comment: str | None = None) -> None:
+def score(name: str, value: str) -> None:
     """Attach a categorical score to the current span.
 
     A score rather than only a metadata field because scores are what Langfuse
-    aggregates: "how many messages did we refuse this week, and for what" is a
-    chart over these, where the same value buried in metadata is a text search.
+    aggregates: "how many messages did we refuse this week" is a chart over
+    these, where the same value buried in metadata is a text search.
+
+    No `comment` parameter, deliberately. It was here, and it never persisted:
+    across four score names every fetched row came back with comment=None. The
+    reason now travels in span metadata instead, which is verified to survive.
+    A parameter that looks like it records something and doesn't is worse than
+    no parameter at all.
     """
     try:
-        get_client().score_current_span(
-            name=name, value=value, data_type="CATEGORICAL", comment=comment
-        )
+        get_client().score_current_span(name=name, value=value, data_type="CATEGORICAL")
     except Exception:
         logger.debug("Could not record span score", exc_info=True)
