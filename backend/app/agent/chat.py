@@ -22,6 +22,8 @@ import os
 from functools import lru_cache
 from typing import Annotated, TypedDict
 
+from langfuse import observe
+from langfuse.langchain import CallbackHandler
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage
 from langgraph.checkpoint.postgres import PostgresSaver
@@ -33,6 +35,7 @@ from psycopg_pool import ConnectionPool
 from app.agent.chat_tools import CHAT_TOOLS
 from app.guardrails.classify import REFUSALS, ChatVerdict, screen_chat_message
 from app.guardrails.containment import CONTAINMENT_FRAMING
+from app.tracing import record
 
 MODEL = "claude-sonnet-5"
 
@@ -105,6 +108,19 @@ def close_pools() -> None:
 
 
 @lru_cache(maxsize=1)
+def _tracer() -> CallbackHandler:
+    """Langfuse's LangChain callback handler.
+
+    This is what makes the chat feature visible at all. Everything the graph
+    does -- the agent loop, which tool it chose, how many iterations it took,
+    per-turn token usage -- reaches Langfuse through here. Without it the only
+    chat span that existed was rewatch_swing's own, which, having no parent,
+    emitted an orphan trace: a Gemini cost with nothing to attribute it to.
+    """
+    return CallbackHandler()
+
+
+@lru_cache(maxsize=1)
 def _graph():
     model = ChatAnthropic(
         model=MODEL,
@@ -164,13 +180,22 @@ def record_turn(graph, config: dict, job_id: str, message: str, reply: str) -> N
     )
 
 
+@observe(name="chat_turn")
 def ask(job_id: str, message: str) -> str:
     """Send one user message; returns the assistant's reply.
+
+    Wrapped in a span so the whole turn is one trace: the guardrail screen and
+    the agent run nest under it instead of each emitting its own disconnected
+    trace, which is what happened before.
 
     History is loaded and saved automatically by the checkpointer, keyed on
     thread_id -- so the caller passes only the new message, not the transcript.
     """
     config = {"configurable": {"thread_id": job_id}}
+    # job_id on the span is what makes a trace findable from a support
+    # question: without it there is no way back from "this answer was wrong"
+    # to the turn that produced it.
+    record(input=message, metadata={"job_id": job_id})
 
     # Screened before the agent runs, so a refused message never reaches the
     # model, the tools, or the video. The refusal is recorded as a real turn
@@ -179,13 +204,16 @@ def ask(job_id: str, message: str) -> str:
     if verdict is not ChatVerdict.OK:
         reply = REFUSALS[verdict]
         record_turn(_graph(), config, job_id, message, reply)
+        record(output=reply)
         return reply
 
     result = _graph().invoke(
         {"messages": [{"role": "user", "content": message}], "job_id": job_id},
-        config=config,
+        config={**config, "callbacks": [_tracer()]},
     )
-    return _text_of(result["messages"][-1])
+    reply = _text_of(result["messages"][-1])
+    record(output=reply)
+    return reply
 
 
 def history(job_id: str) -> list[dict]:

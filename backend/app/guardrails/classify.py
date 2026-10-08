@@ -28,9 +28,10 @@ from enum import StrEnum
 from functools import lru_cache
 
 from anthropic import Anthropic
-from langfuse import observe
+from langfuse import get_client, observe
 
 from app.guardrails.containment import CONTAINMENT_FRAMING
+from app.tracing import record, score
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +49,14 @@ def _client() -> Anthropic:
     return Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
 
+@observe(as_type="generation", name="guardrail_classify")
 def _ask(system: str, user: str) -> str | None:
-    """One Haiku call returning its first line, or None if anything went wrong."""
+    """One Haiku call returning its first line, or None if anything went wrong.
+
+    Traced as a generation so the guardrails' own token cost is attributable.
+    Without this the checks are invisible spend: two extra calls per analysis
+    and one per chat turn, none of it attached to a model or a usage figure.
+    """
     try:
         response = _client().messages.create(
             model=MODEL,
@@ -58,10 +65,33 @@ def _ask(system: str, user: str) -> str | None:
             messages=[{"role": "user", "content": user}],
         )
         text = "".join(b.text for b in response.content if b.type == "text")
+
+        get_client().update_current_generation(
+            model=MODEL,
+            input=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+            output=text,
+            usage_details={
+                "input": response.usage.input_tokens,
+                "output": response.usage.output_tokens,
+            },
+        )
         return text.strip().splitlines()[0].strip() if text.strip() else None
     except Exception:
         logger.exception("Guardrail classification failed; allowing through")
+        record(level="WARNING", status_message="guardrail classification failed")
         return None
+
+
+def _decided(verdict, score_name: str, note: str | None = None) -> None:
+    """Record a verdict as both the span's output and a categorical score.
+
+    The output makes a single trace readable; the score makes the verdicts
+    countable. A span that shows only that screening ran -- which is what these
+    were before -- reads as instrumented on a dashboard while answering none of
+    the questions a guardrail dashboard exists for.
+    """
+    record(output=verdict.value)
+    score(score_name, verdict.value, comment=note)
 
 
 # --- screening a player's question -----------------------------------------
@@ -126,8 +156,10 @@ REFUSALS: dict[ChatVerdict, str] = {
 @observe(name="screen_chat_message")
 def screen_chat_message(message: str) -> ChatVerdict:
     """Classify a player's question before it reaches the coaching agent."""
+    record(input=message)
     label = _ask(_SCREEN_SYSTEM, message)
     if label is None:
+        _decided(ChatVerdict.OK, "chat_screen", "classifier unavailable")
         return ChatVerdict.OK
 
     # Match on the whole first line, uppercased. Anything unrecognised is
@@ -137,10 +169,12 @@ def screen_chat_message(message: str) -> ChatVerdict:
         verdict = ChatVerdict(label.upper().strip(" .:"))
     except ValueError:
         logger.warning("Unrecognised screening label %r; allowing through", label[:60])
+        _decided(ChatVerdict.OK, "chat_screen", f"unparseable label: {label[:40]}")
         return ChatVerdict.OK
 
     if verdict is not ChatVerdict.OK:
         logger.info("Chat message screened as %s", verdict)
+    _decided(verdict, "chat_screen")
     return verdict
 
 
@@ -182,18 +216,22 @@ the advice is good coaching.
 @observe(name="review_feedback")
 def review_feedback(draft: str, evidence: str) -> FeedbackVerdict:
     """Check a feedback draft against the evidence it was written from."""
+    record(input=draft)
     label = _ask(_REVIEW_SYSTEM, f"EVIDENCE:\n{evidence}\n\nDRAFT:\n{draft}")
     if label is None:
+        _decided(FeedbackVerdict.OK, "feedback_review", "classifier unavailable")
         return FeedbackVerdict.OK
 
     try:
         verdict = FeedbackVerdict(label.upper().strip(" .:"))
     except ValueError:
         logger.warning("Unrecognised review label %r; allowing through", label[:60])
+        _decided(FeedbackVerdict.OK, "feedback_review", f"unparseable label: {label[:40]}")
         return FeedbackVerdict.OK
 
     if verdict is not FeedbackVerdict.OK:
         logger.warning("Feedback draft reviewed as %s", verdict)
+    _decided(verdict, "feedback_review")
     return verdict
 
 

@@ -42,6 +42,7 @@ from app.guardrails import (
     validate_video_file,
 )
 from app.models import JobModel
+from app.tracing import record, score
 
 load_dotenv()
 
@@ -135,6 +136,7 @@ class UploadResponse(BaseModel):
 
 @observe(name="analyze_swing_video")
 def _process_video(job_id: str, video_path: Path) -> None:
+    record(metadata={"job_id": job_id})
     session = get_session()
     try:
         job = session.get(JobModel, job_id)
@@ -179,6 +181,7 @@ def _process_video(job_id: str, video_path: Path) -> None:
 
 
 @app.post("/videos", response_model=UploadResponse)
+@observe(name="upload_video")
 async def upload_video(background_tasks: BackgroundTasks, file: UploadFile) -> UploadResponse:
     # Validate before the job row and background task exist, so a bad upload
     # gets an immediate, specific error instead of becoming a job the client
@@ -200,6 +203,11 @@ async def upload_video(background_tasks: BackgroundTasks, file: UploadFile) -> U
         if video_path is not None:
             video_path.unlink(missing_ok=True)
         logger.info("Rejected upload (%d): %s", e.status, e.detail)
+        # Recorded as well as logged. A rejection that only exists in stdout
+        # can't answer "are real users hitting these limits" -- which is the
+        # signal that tells us a limit is set wrong rather than working.
+        record(output=e.detail, metadata={"status": e.status})
+        score("upload_outcome", "rejected", comment=e.detail)
         raise HTTPException(status_code=e.status, detail=e.detail) from e
 
     session = get_session()
@@ -211,6 +219,8 @@ async def upload_video(background_tasks: BackgroundTasks, file: UploadFile) -> U
 
     background_tasks.add_task(_process_video, job_id, video_path)
 
+    record(metadata={"job_id": job_id})
+    score("upload_outcome", "accepted")
     return UploadResponse(job_id=job_id)
 
 
