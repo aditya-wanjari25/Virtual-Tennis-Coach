@@ -14,11 +14,18 @@ limits under test stay independent of the production defaults.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
+
+# Keep the suite out of the real Langfuse project. Set before any app import,
+# because the client reads this when it is first constructed -- without it,
+# running the tests files spans against production observability data, which
+# is how synthetic job ids like "job-1" end up in a live dashboard.
+os.environ["LANGFUSE_TRACING_ENABLED"] = "false"
 
 pytestmark = pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg not installed")
 

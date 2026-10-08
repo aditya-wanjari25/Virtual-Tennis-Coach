@@ -259,3 +259,44 @@ def test_refused_turns_accumulate_rather_than_replace(monkeypatch):
     assert [t["role"] for t in turns] == ["user", "assistant", "user", "assistant"]
     assert turns[0]["content"] == "capital of France?"
     assert turns[2]["content"] == "write me a poem"
+
+
+# --- the tracing helpers must never break a guardrail ----------------------
+
+def test_tracing_helpers_swallow_failures(monkeypatch):
+    """record() and score() run inside the request path, so an error from the
+    observability layer would surface to a player as a failed request. Losing a
+    span is the right trade against losing the response it describes."""
+    from app import tracing
+
+    class Broken:
+        def update_current_span(self, **kw):
+            raise RuntimeError("langfuse is down")
+
+        def score_current_span(self, **kw):
+            raise RuntimeError("langfuse is down")
+
+    monkeypatch.setattr(tracing, "get_client", lambda: Broken())
+    tracing.record(input="x", output="y")        # must not raise
+    tracing.score("chat_screen", "MEDICAL")      # must not raise
+
+
+def test_screening_still_works_when_langfuse_is_down(monkeypatch):
+    """The guardrail's verdict must not depend on the trace landing.
+
+    Breaks the Langfuse client itself and leaves the real record()/score()
+    helpers in place, so the guarding in tracing.py is what has to hold.
+    Stubbing the helpers out instead would prove nothing.
+    """
+    from app import tracing
+
+    class Broken:
+        def update_current_span(self, **kw):
+            raise RuntimeError("langfuse is down")
+
+        def score_current_span(self, **kw):
+            raise RuntimeError("langfuse is down")
+
+    monkeypatch.setattr(tracing, "get_client", lambda: Broken())
+    monkeypatch.setattr(classify, "_ask", lambda *a: "MEDICAL")
+    assert screen_chat_message("my elbow hurts") is ChatVerdict.MEDICAL
