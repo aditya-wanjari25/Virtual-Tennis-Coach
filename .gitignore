@@ -22,3 +22,5 @@ backend/storage/
 node_modules/
 dist/
 backend/.env
+
+.claude

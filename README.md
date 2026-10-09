@@ -59,7 +59,7 @@ POST /videos/{id}/chat       → follow-up questions
 
 **Prerequisites:** Docker, [uv](https://docs.astral.sh/uv/), Node 22+, and `ffmpeg` on PATH (`brew install ffmpeg`).
 
-**1. Fetch the pose model** (9.4MB, not committed):
+**1. Fetch the pose model**:
 
 ```bash
 mkdir -p backend/cv_spike/models
@@ -93,28 +93,6 @@ npm run dev
 
 Open **http://localhost:5173** and upload a clip of a few groundstrokes filmed from behind the baseline. Five to fifteen seconds is plenty.
 
-### Configuration
-
-Set in `backend/.env`:
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `ANTHROPIC_API_KEY` | — | Coaching and guardrail calls |
-| `GEMINI_API_KEY` | — | Video perception |
-| `LANGFUSE_PUBLIC_KEY` | — | Tracing |
-| `LANGFUSE_SECRET_KEY` | — | Tracing |
-| `LANGFUSE_BASE_URL` | `https://us.cloud.langfuse.com` | Tracing |
-| `DATABASE_URL` | — | Postgres connection string |
-| `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated allowed origins |
-| `VIDEO_RETENTION_DAYS` | `7` | How long uploads are kept |
-| `MAX_UPLOAD_MB` | `100` | Upload size cap |
-| `MAX_VIDEO_DURATION_S` | `90` | Clip length cap |
-| `MAX_VIDEO_FRAMES` | `3000` | Frame budget for pose extraction |
-| `MAX_VIDEO_LONG_EDGE_PX` | `3840` | Resolution cap |
-| `MAX_CHAT_CHARS` | `2000` | Chat message cap |
-
----
-
 ## Tests
 
 ```bash
@@ -138,12 +116,3 @@ cd backend && uv run pytest
 | `GET` | `/healthz` | Liveness probe |
 
 ---
-
-## Deployment
-
-`fly.toml` deploys one app serving both the API and the built frontend, so the deployed setup is same-origin and needs no CORS. A Fly volume holds uploaded videos so they survive deploys.
-
-```bash
-fly secrets set ANTHROPIC_API_KEY=... GEMINI_API_KEY=...   # etc.
-fly deploy
-```
