@@ -9,6 +9,72 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    # The app runs `alembic upgrade head` as the first thing in its CMD, so it
+    # needs a database that is actually accepting connections -- not merely a
+    # container that has started. Without this, `depends_on` would release the
+    # app too early and the migration would fail on a closed socket.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tennis -d tennis_coach"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # The whole application as it is actually deployed: one image serving the API
+  # and the built frontend from the same origin.
+  #
+  # Behind a profile on purpose. `docker compose up -d postgres` stays the
+  # normal development path -- uvicorn --reload and the Vite dev server on the
+  # host, with hot reload. This service builds the frontend into static assets
+  # at image build time, so editing a component means rebuilding; it is here to
+  # verify the deployable artifact, not to develop against.
+  app:
+    profiles: ["full"]
+    # Pinned to x86_64, which is not a preference -- it's the only thing that
+    # builds. mediapipe 0.10.30 publishes no linux/arm64 wheel (no 0.10.x does;
+    # only 1.x, which would be a major bump to the library whose output every
+    # metric depends on). On Apple Silicon this therefore runs emulated, so
+    # pose extraction here is far slower than on the host. Fine for checking
+    # the deployable image; not a way to iterate.
+    platform: linux/amd64
+    build:
+      # Repo root, not backend/: the first stage builds the frontend, so the
+      # context has to contain both halves. Same Dockerfile Fly deploys.
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      # Container port matches production; the host side defaults to 8080 and
+      # NOT 8000, on purpose.
+      #
+      # Docker Desktop binds 0.0.0.0:8000 without erroring even when a host-run
+      # uvicorn already holds 127.0.0.1:8000 -- and the container then wins
+      # localhost traffic. The host server keeps running, looking healthy, while
+      # every request to :8000 reaches the container instead, backed by a
+      # different storage volume. Nothing errors; the wrong thing just answers.
+      # Defaulting away from 8000 makes that collision impossible.
+      #   APP_PORT=8000 docker compose --profile full up   # to match production
+      - "${APP_PORT:-8080}:8000"
+    env_file:
+      # API keys live here and are deliberately NOT baked into the image --
+      # .dockerignore excludes **/.env, so they have to arrive at runtime.
+      - backend/.env
+    environment:
+      # Overrides whatever backend/.env says. That file points at localhost for
+      # host-run development; inside the compose network the database is
+      # reachable as `postgres`. Values in `environment` win over `env_file`.
+      DATABASE_URL: postgresql+psycopg://tennis:tennis@postgres:5432/tennis_coach
+      # Same-origin in this image -- the API serves the frontend -- so CORS has
+      # nothing to allow. Set empty rather than inheriting a dev origin that
+      # would be misleading to read in a config dump.
+      CORS_ORIGINS: ""
+    volumes:
+      # Uploaded videos, kept so chat's rewatch_swing can re-examine a swing.
+      # A named volume rather than a bind mount, mirroring the Fly volume at
+      # the same path -- without it, uploads vanish on every `down`.
+      - app_storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
 
 volumes:
   postgres_data:
+  app_storage:

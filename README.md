@@ -57,6 +57,25 @@ POST /videos/{id}/chat       → follow-up questions
 
 ## Running it locally
 
+Two ways: Docker runs the same image that gets deployed, and the host setup gives you hot reload for development.
+
+### In Docker
+
+Fill in `backend/.env` first (`cp backend/.env.example backend/.env`), then two commands:
+
+```bash
+docker compose --profile full build
+docker compose --profile full up
+```
+
+Open **http://localhost:8080** — one container serves both the API and the frontend. Postgres starts alongside it and migrations run automatically.
+
+- The host port is 8080 rather than 8000 deliberately: Docker will otherwise bind over a host-run dev server on 8000 without any error and quietly answer in its place. Use `APP_PORT=8000 docker compose --profile full up` to match production exactly.
+- The frontend is compiled into the image, so code changes need a rebuild — use the host setup below to develop.
+- **On Apple Silicon the image runs emulated.** `mediapipe` publishes no linux/arm64 wheel, so the image is x86_64 only. It works — a 6-second clip analysed in about 75 seconds in testing — but pose extraction is slower than native.
+
+### On the host
+
 **Prerequisites:** Docker, [uv](https://docs.astral.sh/uv/), Node 22+, and `ffmpeg` on PATH (`brew install ffmpeg`).
 
 **1. Fetch the pose model**:
