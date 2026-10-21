@@ -357,3 +357,46 @@ def test_every_exit_path_records_exactly_one_outcome(drafts, outcomes, monkeypat
         _verdicts(monkeypatch, *sequence)
         analyst.analyze([{"contact_time_s": 1.0}])
         assert len(outcomes) == 1, f"{sequence} recorded {len(outcomes)} outcomes"
+
+
+# --- reasoning effort on the coaching call ---------------------------------
+# The draft call was the largest single cost in the pipeline, and most of its
+# token budget went to reasoning the player never sees. These pin the knob down
+# so it cannot be silently dropped or left on the slow default.
+
+def test_draft_sends_the_configured_effort(monkeypatch):
+    captured = {}
+
+    class FakeMessages:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+            block = type("B", (), {"type": "text", "text": "feedback"})()
+            usage = type("U", (), {"input_tokens": 10, "output_tokens": 5})()
+            return type("R", (), {"content": [block], "usage": usage})()
+
+    monkeypatch.setattr(analyst, "_client", lambda: type("C", (), {"messages": FakeMessages()})())
+    monkeypatch.setattr(analyst, "ANALYSIS_EFFORT", "low")
+    assert analyst._draft("EVIDENCE") == "feedback"
+    assert captured["output_config"] == {"effort": "low"}
+
+
+def test_effort_is_overridable_without_a_code_change(monkeypatch):
+    """It is a quality/latency trade, so it has to be tunable in the
+    environment -- 'medium' is the fallback if prioritisation looks worse."""
+    import importlib
+
+    monkeypatch.setenv("ANALYSIS_EFFORT", "medium")
+    reloaded = importlib.reload(analyst)
+    try:
+        assert reloaded.ANALYSIS_EFFORT == "medium"
+    finally:
+        monkeypatch.delenv("ANALYSIS_EFFORT", raising=False)
+        importlib.reload(analyst)
+
+
+def test_effort_defaults_to_low(monkeypatch):
+    import importlib
+
+    monkeypatch.delenv("ANALYSIS_EFFORT", raising=False)
+    reloaded = importlib.reload(analyst)
+    assert reloaded.ANALYSIS_EFFORT == "low"

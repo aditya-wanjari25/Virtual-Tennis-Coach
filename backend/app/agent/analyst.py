@@ -35,6 +35,22 @@ logger = logging.getLogger(__name__)
 
 MODEL = "claude-sonnet-5"
 
+# Reasoning effort for the coaching call.
+#
+# Sonnet 5 thinks adaptively by default, which behaves like effort="high":
+# measured ~22s per draft and ~1700 output tokens, of which only ~400 were the
+# visible feedback. The rest was reasoning the player never sees. At "low" the
+# same call takes ~8s, and the written output is the same length (276-296 words
+# across every setting) and still passes the prompt's own rules.
+#
+# Env-configurable rather than hardcoded because this is the one setting that
+# trades feedback quality for latency. The prompt asks the model to identify
+# findings, prioritise the top 1-3, then write -- and prompts.py notes that the
+# three-call chain was collapsed into one *because* Sonnet does that
+# decomposition internally. So if prioritisation ever looks worse, "medium"
+# (~14s) is the middle setting and this needs no redeploy to try.
+ANALYSIS_EFFORT = os.environ.get("ANALYSIS_EFFORT", "low")
+
 
 @lru_cache(maxsize=1)
 def _client() -> Anthropic:
@@ -84,6 +100,7 @@ def _draft(user_content: str, previous: str | None = None, repair: str | None = 
         max_tokens=4096,
         system=ANALYZE_AND_COACH_SYSTEM_PROMPT,
         messages=messages,
+        output_config={"effort": ANALYSIS_EFFORT},
     )
     text = "".join(block.text for block in response.content if block.type == "text")
 
@@ -95,6 +112,9 @@ def _draft(user_content: str, previous: str | None = None, repair: str | None = 
         ],
         output=text,
         usage_details={"input": response.usage.input_tokens, "output": response.usage.output_tokens},
+        # On the trace so a slow or thin draft can be tied back to the setting
+        # that produced it, rather than guessing from latency alone.
+        metadata={"effort": ANALYSIS_EFFORT, "repair": bool(previous and repair)},
     )
     return text
 
