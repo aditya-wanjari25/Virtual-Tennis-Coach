@@ -1,0 +1,76 @@
+name: Deploy
+
+# Manual on purpose, not on every push to main.
+#
+# `fly deploy` rebuilds the image and restarts the machine, and each analysis
+# the app then runs costs real money in Gemini and Claude calls. Shipping
+# automatically on every commit would mean a README typo triggers a full
+# rebuild. Continuous delivery -- always deployable, shipped on a decision --
+# fits this project better than continuous deployment.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false # never interrupt a deploy mid-rollout
+
+jobs:
+  # Tests run here rather than relying on the CI workflow having passed, so a
+  # manual deploy cannot skip the gate. This is the whole point of deploying
+  # from a pipeline: the deployed commit is one that demonstrably passed.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+
+      - name: Fetch MediaPipe pose model
+        run: |
+          mkdir -p backend/cv_spike/models
+          curl -fsSL -o backend/cv_spike/models/pose_landmarker_full.task \
+            "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Run tests
+        working-directory: backend
+        run: |
+          uv sync --frozen
+          uv run pytest
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      # --remote-only builds on Fly's x86_64 builders. That matters here:
+      # mediapipe publishes no linux/arm64 wheel, so the image is x86-only and
+      # building anywhere else would need emulation.
+      - name: Deploy
+        run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      # A deploy that reports success while the app fails to boot is worse than
+      # a failed deploy, because nothing tells you. The machine scales to zero,
+      # so this request is also what wakes it.
+      - name: Smoke test
+        run: |
+          for i in $(seq 1 10); do
+            CODE=$(curl -sS -m 60 -o /dev/null -w "%{http_code}" https://virtual-tennis-coach.fly.dev/healthz || echo 000)
+            echo "attempt $i: HTTP $CODE"
+            [ "$CODE" = "200" ] && exit 0
+            sleep 15
+          done
+          echo "::error::App did not return 200 from /healthz after deploy"
+          exit 1

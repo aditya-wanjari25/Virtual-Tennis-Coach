@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# A second push to the same branch makes the first run's result irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # ffmpeg is not optional for this suite. tests/conftest.py generates every
+      # test video with it at run time, and skips the whole module when it is
+      # missing -- so without this step CI would pass by testing almost nothing.
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -hide_banner -encoders | grep -q libx265 || echo "NOTE: no libx265, the HEVC test will skip"
+
+      # Same reason: the two extraction tests are skipped unless the model is
+      # present, and the model is deliberately not committed (see Dockerfile).
+      - name: Fetch MediaPipe pose model
+        run: |
+          mkdir -p backend/cv_spike/models
+          curl -fsSL -o backend/cv_spike/models/pose_landmarker_full.task \
+            "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Install dependencies
+        working-directory: backend
+        run: uv sync --frozen
+
+      # The suite needs no database and no API keys, by design -- conftest.py
+      # also pins LANGFUSE_TRACING_ENABLED=false so a CI run cannot file spans
+      # against real observability data.
+      - name: Run tests
+        working-directory: backend
+        run: |
+          set -o pipefail
+          uv run pytest | tee /tmp/pytest.out
+
+      # Guards against the suite quietly shrinking. Several tests skip rather
+      # than fail when a system dependency is absent (no ffmpeg, no libx265, no
+      # pose model), so a run that tests almost nothing still exits 0. Asserting
+      # on PASSES rather than collected tests is what makes the green check
+      # mean something.
+      - name: Assert the suite actually ran
+        working-directory: backend
+        run: |
+          PASSED=$(grep -oE '[0-9]+ passed' /tmp/pytest.out | grep -oE '[0-9]+' | head -1)
+          SKIPPED=$(grep -oE '[0-9]+ skipped' /tmp/pytest.out | grep -oE '[0-9]+' | head -1 || true)
+          echo "passed=${PASSED:-0} skipped=${SKIPPED:-0}"
+          if [ "${PASSED:-0}" -lt 90 ]; then
+            echo "::error::Only ${PASSED:-0} tests passed; expected 90+. Something is not being tested."
+            exit 1
+          fi
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      # `npm run build` is `tsc -b && vite build`, so this type-checks as well
+      # as bundling -- the step that would have caught a bad JSX edit.
+      - name: Type-check and build
+        working-directory: frontend
+        run: npm run build
+
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
