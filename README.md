@@ -1,5 +1,7 @@
 # Virtual Tennis Coach
 
+**Live: [virtual-tennis-coach.fly.dev](https://virtual-tennis-coach.fly.dev)** — the machine scales to zero when idle, so the first request takes ~18s to wake it.
+
 Upload a video of your groundstrokes and get specific, measured coaching feedback — then ask follow-up questions about it.
 
 A computer-vision pipeline measures your body mechanics frame by frame, a vision model watches what the measurements can't see, and a language model turns both into coaching you can act on.
@@ -118,7 +120,7 @@ Open **http://localhost:5173** and upload a clip of a few groundstrokes filmed f
 cd backend && uv run pytest
 ```
 
-94 tests, no database or API keys required. Test videos are generated with ffmpeg at run time.
+102 tests, no database or API keys required. Test videos are generated with ffmpeg at run time.
 
 ---
 
@@ -135,3 +137,14 @@ cd backend && uv run pytest
 | `GET` | `/healthz` | Liveness probe |
 
 ---
+
+## Deploying
+
+Deployed on Fly as one app serving both the API and the built frontend, so it's same-origin and needs no CORS. A volume holds uploaded videos across releases; Postgres is external.
+
+```bash
+fly secrets set ANTHROPIC_API_KEY=... GEMINI_API_KEY=... DATABASE_URL=...   # etc.
+fly deploy
+```
+
+`DATABASE_URL` is accepted in any common form — `db.py` normalises it to the driver SQLAlchemy needs.
