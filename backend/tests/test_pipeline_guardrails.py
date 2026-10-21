@@ -76,3 +76,58 @@ def test_stored_video_refuses_to_escape_the_storage_directory(key, tmp_path: Pat
         assert chat_tools._stored_video(key) is None
     finally:
         outside.unlink(missing_ok=True)
+
+
+# --- DATABASE_URL normalisation --------------------------------------------
+# A hosting platform sets this value in whatever form it assumes. Fly's
+# `postgres attach` writes `postgres://...`, which SQLAlchemy cannot resolve a
+# dialect for -- and the first database call in the container is `alembic
+# upgrade head` in the CMD, so getting this wrong means the machine never boots.
+
+@pytest.mark.parametrize("given,expected", [
+    ("postgres://u:p@h:5432/d",                  "postgresql+psycopg://u:p@h:5432/d"),
+    ("postgresql://u:p@h:5432/d",                "postgresql+psycopg://u:p@h:5432/d"),
+    ("postgresql+psycopg://u:p@h:5432/d",        "postgresql+psycopg://u:p@h:5432/d"),
+])
+def test_sqlalchemy_url_normalises_driverless_prefixes(given, expected, monkeypatch):
+    from app import db
+
+    monkeypatch.setenv("DATABASE_URL", given)
+    assert db.sqlalchemy_url() == expected
+
+
+def test_sqlalchemy_url_leaves_an_explicit_driver_alone(monkeypatch):
+    """Someone naming a driver has made a choice; overriding it would be rude
+    and would hide their mistake rather than surface it."""
+    from app import db
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg2://u:p@h:5432/d")
+    assert db.sqlalchemy_url() == "postgresql+psycopg2://u:p@h:5432/d"
+
+
+@pytest.mark.parametrize("given", [
+    "postgres://u:p@h:5432/d",
+    "postgresql://u:p@h:5432/d",
+    "postgresql+psycopg://u:p@h:5432/d",
+])
+def test_libpq_url_strips_the_dialect_suffix(given, monkeypatch):
+    """LangGraph's checkpointer talks to psycopg directly and rejects the
+    SQLAlchemy dialect suffix, so it needs the inverse conversion."""
+    from app import db
+
+    monkeypatch.setenv("DATABASE_URL", given)
+    url = db.libpq_url()
+    assert url == "postgresql://u:p@h:5432/d"
+    assert "+psycopg" not in url
+
+
+def test_normalised_url_actually_resolves_a_dialect(monkeypatch):
+    """The point of all this: SQLAlchemy must be able to build an engine from
+    whatever the platform handed us, with only psycopg v3 installed."""
+    from sqlalchemy import create_engine
+
+    from app import db
+
+    monkeypatch.setenv("DATABASE_URL", "postgres://u:p@h:5432/d")
+    engine = create_engine(db.sqlalchemy_url())
+    assert engine.dialect.driver == "psycopg"

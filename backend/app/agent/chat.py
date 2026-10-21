@@ -33,6 +33,7 @@ from langgraph.prebuilt import ToolNode, tools_condition
 from psycopg_pool import ConnectionPool
 
 from app.agent.chat_tools import CHAT_TOOLS
+from app.db import libpq_url
 from app.guardrails.classify import REFUSALS, ChatVerdict, screen_chat_message
 from app.guardrails.containment import CONTAINMENT_FRAMING
 from app.tracing import record
@@ -87,8 +88,7 @@ def _checkpointer() -> PostgresSaver:
     construct the saver directly. Note it wants a raw libpq URL; DATABASE_URL is
     SQLAlchemy-flavoured (postgresql+psycopg://) and needs the driver stripped.
     """
-    dsn = os.environ["DATABASE_URL"].replace("postgresql+psycopg://", "postgresql://")
-    pool = ConnectionPool(conninfo=dsn, max_size=5, kwargs={"autocommit": True})
+    pool = ConnectionPool(conninfo=libpq_url(), max_size=5, kwargs={"autocommit": True})
     saver = PostgresSaver(pool)
     saver.setup()  # idempotent; creates the checkpoint tables on first run
     _pools.append(pool)
